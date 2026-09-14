@@ -21,6 +21,7 @@ Upload these from the kit (a GPT allows up to 20 files):
 - `examples/derotation_example.yml`
 - `examples/block_order_example.yml`
 - `lint/survey-dsl-lint.js`  *(optional — lets it see exactly what the linter checks)*
+- `lint/survey_dsl_lint.py`  *(optional — the Python port; upload this if you want the GPT to self-lint via Code Interpreter, see the last section)*
 
 ## 3. Paste into the Instructions field
 
@@ -97,8 +98,17 @@ enabled with a linter available.
 
 ## Self-linting inside the GPT (optional, advanced)
 
-The bundled linter is Node; ChatGPT's Code Interpreter runs **Python**, so it can't run
-`survey-dsl-lint.js` directly. If you want the GPT to lint its own output before
-returning it, ask the kit maintainer for the **Python port** of the linter, upload it as
-Knowledge, enable Code Interpreter, and add a line to the Instructions: "Before
-returning, run the uploaded linter on your output and fix all errors."
+ChatGPT's Code Interpreter runs **Python**, so it can't run the Node `survey-dsl-lint.js`
+— but the kit ships a byte-for-byte **Python port**, `lint/survey_dsl_lint.py`. To have
+the GPT lint its own output before returning it:
+
+1. Upload `lint/survey_dsl_lint.py` as a Knowledge file.
+2. Turn **Code Interpreter ON** in Capabilities.
+3. Add this to the end of the Instructions field:
+   ```
+   SELF-LINT. Before returning the .yml, use Code Interpreter to run the uploaded
+   survey_dsl_lint.py on your output (write the .yml to a temp file and run
+   `python3 survey_dsl_lint.py <file>`). Fix every reported error, re-run until it
+   reports 0 errors, then return the corrected .yml. Note the linter is style/structure
+   only — it is not a substitute for importing to Fieldbase.
+   ```

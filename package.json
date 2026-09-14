@@ -9,7 +9,8 @@
   },
   "scripts": {
     "lint": "node lint/survey-dsl-lint.js",
-    "lint:examples": "node lint/survey-dsl-lint.js examples/*.yml"
+    "lint:examples": "node lint/survey-dsl-lint.js examples/*.yml",
+    "lint:py": "python3 lint/survey_dsl_lint.py"
   },
   "files": [
     "SURVEY-DSL-AUTHORING.md",

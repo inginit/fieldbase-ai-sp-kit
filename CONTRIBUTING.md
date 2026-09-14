@@ -19,6 +19,14 @@ are kept in lock-step. When you add a rule:
      reports an error the validator would pass).
 3. Add or extend an example under `examples/` that exercises it, and make sure the whole
    corpus stays clean: `npm run lint:examples`.
+4. **Keep the two linters in parity.** `lint/survey-dsl-lint.js` (Node) and
+   `lint/survey_dsl_lint.py` (Python) must produce identical output. Port any rule change
+   to both and confirm:
+   ```bash
+   node lint/survey-dsl-lint.js examples/*.yml > /tmp/js.out
+   python3 lint/survey_dsl_lint.py examples/*.yml > /tmp/py.out
+   diff /tmp/js.out /tmp/py.out   # must be empty
+   ```
 
 ## Examples
 

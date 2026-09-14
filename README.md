@@ -32,6 +32,13 @@ node lint/survey-dsl-lint.js examples/*.yml
 # Exit code 0 = no errors (warnings allowed); 1 = errors.
 ```
 
+Prefer Python (e.g. a ChatGPT Code Interpreter sandbox, or Python CI)? A byte-for-byte
+port is bundled — same rules, messages, and exit codes:
+
+```bash
+python3 lint/survey_dsl_lint.py my-survey.yml
+```
+
 For an AI assistant: load `SURVEY-DSL-AUTHORING.md` as context (or via the shim in
 [`integrations/`](integrations/) for your host), author the survey, then run the
 linter before declaring the task done (§0.2 of the reference).
@@ -55,7 +62,8 @@ platform validator are complements.
 
 ```
 SURVEY-DSL-AUTHORING.md   the authoring reference (knowledge pack)
-lint/survey-dsl-lint.js   the standalone style/structure linter
+lint/survey-dsl-lint.js   the standalone style/structure linter (Node)
+lint/survey_dsl_lint.py   byte-for-byte Python port (for Python/Code-Interpreter use)
 examples/                 validator-clean example surveys (synthetic)
 integrations/             per-host shims (CLAUDE.md, AGENTS.md, .cursorrules)
 HANDOFF.md                what was done, provenance, linter calibration, findings
