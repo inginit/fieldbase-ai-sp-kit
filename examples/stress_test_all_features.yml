@@ -1,0 +1,1465 @@
+# =============================================================================
+# DSL STRESS TEST — full coverage of types / properties / accessors / styles
+# =============================================================================
+#
+# Synthetic survey designed to exercise the entire authoring surface in one
+# document. Every canonical question type is represented at least once. Every
+# style (per §4 of CLAUDE.md) is rendered at least once. All major properties
+# fire. The most error-prone surfaces (loops, mixGrid, lookup variants,
+# annotations, scripts, validation, quotas, piping, multi-country) get a
+# section each.
+#
+# This is NOT a real survey — it's a contract test for the platform. Run it
+# through the validator + every lint check; behaviour-test it in preview.
+#
+# !HUMAN — Quotas (Section §QUO) require a `qtBattery` group with 4 cells.
+# !HUMAN — Lookup taxonomies (Section §LU) require uploads via the lookup
+#          wizard before fielding.
+#
+# Layout:
+#   §H   Header  — hCountry punch, QErrMsg, info intros
+#   §S   Singles — all five styles, specify, exclusive, anchor, image
+#   §M   Multis  — all five styles, min/max/exact, exclusive opt-out
+#   §R   Rank
+#   §O   Opens (open / openList) — text / textarea, input.*
+#   §N   Numbers (number / numberList) — slider / total / sum
+#   §G   Grids — gridSingle (grid + paired), gridMulti, gridNumber
+#   §X   mixGrid — every supported child column type
+#   §LU  Lookup — searchInput / dropdown / cascading / multi / matchOnly
+#   §A   Annotations (research modules — stubs per CLAUDE.md §2)
+#   §F   Flow — page, block, loop (with cross-iteration access), if/elif, script, note
+#   §V   Validation — `fail()` patterns piped from QErrMsg
+#   §QUO Quotas — least-fill assignment, fill(), reads
+#   §P   Piping  — every common pipe expression
+#   §END Close-out
+#   §L   Reusable lists (at the bottom per CLAUDE.md §5.2)
+#   §DELTA delta-log
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# §H — HEADER
+# -----------------------------------------------------------------------------
+
+# Multi-country pattern — punch hCountry from request.param at the top.
+# Per CLAUDE.md §"Multi-country authoring": every country gate reads from
+# hCountry.value, never from request.param("lang") directly.
+- script: |
+    lang = request.param("lang")
+    if lang == "en-US":
+        hCountry.set(1)
+    elif lang == "en-GB":
+        hCountry.set(2)
+    elif lang == "de-DE":
+        hCountry.set(3)
+    elif lang == "ja-JP":
+        hCountry.set(4)
+    else:
+        hCountry.set(1)
+
+- qid: hCountry
+    type: single
+    visibility: hide
+    title: Country (derived from URL lang param)
+    options:
+        1: United States
+        2: United Kingdom
+        3: Germany
+        4: Japan
+
+# Error-message catalog — every fail() pipes from here.
+- qid: QErrMsg
+    type: multi
+    visibility: hide
+    title: Validation error messages
+    options:
+        1: Please provide a response.
+        2: Please enter a number.
+        3: Total must equal 100.
+        4: Total must equal the target above.
+        5: Pick at least one of the listed options.
+        6: That ZIP code isn't in our footprint.
+        7: Please enter at least 4 characters.
+        8: Please enter a valid US phone number.
+
+- qid: Intro
+    type: info
+    title: Welcome
+    text: |
+        Welcome to the platform stress-test survey.
+        <br><br>
+        This survey exercises every canonical question type and property —
+        you'll see <b>singles</b>, <b>multis</b>, <b>grids</b>, <b>loops</b>,
+        <b>lookups</b> and more. It's synthetic test data, not a real survey.
+
+# -----------------------------------------------------------------------------
+# §S — SINGLE (5 styles + specify + exclusive + anchor + image)
+# -----------------------------------------------------------------------------
+
+# Style: radio (default). Simple options. Order: random with anchor.
+- qid: QSinRadio
+    type: single
+    text: Which beverage do you reach for first in the morning?
+    instruction: <i>(Radio, randomized; PNTA is anchored.)</i>
+    required: True
+    order: random
+    options:
+        1: Coffee
+        2: Tea
+        3: Juice
+        4: Water
+        5: Smoothie
+        97:
+            label: Other (please specify)
+            specify: True
+            anchor: True
+        99:
+            label: Prefer not to answer
+            anchor: True
+
+# Style: dropdown. Long list — dropdown is the right rendering.
+- qid: QSinDropdown
+    type: single
+    text: Which country were you born in?
+    style: dropdown
+    required: True
+    options: countriesShort
+
+# Style: buttons. Short numeric scale with prefix/suffix anchor labels in
+# the option labels themselves (NOT label.prefix/suffix — those aren't valid
+# on `single` per §0.1).
+- qid: QSinButtons
+    type: single
+    text: On a scale of 0-10, how likely are you to recommend us?
+    style: buttons
+    required: True
+    options:
+        0: 0 — Not at all likely
+        1: 1
+        2: 2
+        3: 3
+        4: 4
+        5: 5
+        6: 6
+        7: 7
+        8: 8
+        9: 9
+        10: 10 — Extremely likely
+
+# Style: cards. Larger tappable cards.
+- qid: QSinCards
+    type: single
+    text: Which describes your role best?
+    style: cards
+    required: True
+    options:
+        1:
+            label: Decision maker
+            data: {weight: 3}
+        2:
+            label: Influencer
+            data: {weight: 2}
+        3:
+            label: End user
+            data: {weight: 1}
+
+# Style: imageCards (camelCase, per the renderer's skin matrix).
+# Image-first cards — image dominates the cell; label is supportive.
+# (`cards` with `image:` is a related but different skin where the label
+# is primary and the image is decorative.)
+- qid: QSinImageCards
+    type: single
+    text: Which package design appeals most?
+    style: imageCards
+    required: True
+    layout.cols: 3
+    options:
+        1:
+            label: Package A
+            image: https://example.com/pkg-a.png
+        2:
+            label: Package B
+            image: https://example.com/pkg-b.png
+        3:
+            label: Package C
+            image: https://example.com/pkg-c.png
+
+# Single + readonly + default.errors customization.
+- qid: QSinReadonly
+    type: single
+    text: Confirmed segment (auto-assigned):
+    readonly: True
+    default.errors: False
+    options:
+        1: Premium
+        2: Standard
+        3: Light
+    if: hSegment.value is not None
+
+# -----------------------------------------------------------------------------
+# §M — MULTI (5 styles, min / max / exact, exclusive, group with show.label)
+# -----------------------------------------------------------------------------
+
+# Style: checkbox (default). With group + show.label.
+# Anchor "None of these" lives in its own hidden-label group at the end,
+# carrying exclusive on the option entry (where exclusive IS valid for multi).
+- qid: QMulCheckbox
+    type: multi
+    text: Which of the following did you purchase in the past 12 months?
+    instruction: <i>(Select all that apply.)</i>
+    required: True
+    min: 1
+    group:
+        Electronics:
+            show.label: True
+            options:
+                1: Laptop
+                2: Smartphone
+                3: Tablet
+        Apparel:
+            show.label: True
+            options:
+                4: Shoes
+                5: Outerwear
+                6: Accessories
+        Home:
+            show.label: True
+            options:
+                7: Furniture
+                8: Appliances
+        Opt-out:
+            show.label: False
+            anchor: True
+            options:
+                99:
+                    label: None of these
+                    exclusive: True
+                    anchor: True
+
+# Style: buttons. Multi with `exact:` constraint.
+- qid: QMulButtons
+    type: multi
+    text: Pick exactly TWO motivators you respond to most.
+    style: buttons
+    required: True
+    exact: 2
+    order: randomEach
+    options:
+        1: Lowest price
+        2: Highest quality
+        3: Fastest delivery
+        4: Best customer service
+        5: Brand reputation
+        6: Sustainable / ethical
+
+# Style: cards. Multi with min/max.
+- qid: QMulCards
+    type: multi
+    text: Pick 2-4 brands you have purchased from in the past year.
+    style: cards
+    required: True
+    min: 2
+    max: 4
+    options: brandsLong
+
+# Style: imageCards (multi). Same camelCase rule as the single variant.
+- qid: QMulImageCards
+    type: multi
+    text: Which of these moodboards reflect your aesthetic?
+    style: imageCards
+    layout.cols: 2
+    required: True
+    min: 1
+    options:
+        1:
+            label: Minimalist
+            image: https://example.com/m1.png
+        2:
+            label: Maximalist
+            image: https://example.com/m2.png
+        3:
+            label: Industrial
+            image: https://example.com/m3.png
+        4:
+            label: Cottagecore
+            image: https://example.com/m4.png
+
+# Style: dropdown (multi-dropdown). With specify on `Other`.
+- qid: QMulDropdown
+    type: multi
+    text: Which languages do you speak conversationally?
+    style: dropdown
+    required: True
+    min: 1
+    options: languagesLong
+
+# -----------------------------------------------------------------------------
+# §R — RANK
+# -----------------------------------------------------------------------------
+
+- qid: QRankTop3
+    type: rank
+    text: Rank your TOP THREE reasons for choosing a streaming service.
+    instruction: <i>(Drag to reorder. Top three only.)</i>
+    required: True
+    min: 1
+    max: 3
+    order: random
+    options:
+        1: Original content
+        2: Library breadth
+        3: Price / value
+        4: Recommendations / discovery
+        5: Ad-free experience
+        6: Offline downloads
+        7: Family sharing
+        8:
+            label: Other (please specify)
+            specify: True
+            anchor: True
+
+# -----------------------------------------------------------------------------
+# §O — OPEN (open + openList)
+# -----------------------------------------------------------------------------
+
+# Style: text (default). With min/maxChar.
+- qid: QOpenShort
+    type: open
+    style: text
+    text: In one word, how would you describe our service?
+    required: True
+    input.size: 30
+    input.maxChar: 50
+    input.min_char: 2
+    validation: |
+        v = QOpenShort.value
+        if v is None or len(v) < 2:
+            fail(QErrMsg.row(7).label)
+
+# Style: textarea. For longer free-text.
+- qid: QOpenLong
+    type: open
+    style: textarea
+    text: What's the single best thing about your current provider?
+    instruction: <i>(Minimum 20 characters.)</i>
+    required: True
+    input.size: 60
+    input.rows: 4
+    input.maxChar: 500
+    input.min_char: 20
+    validation: |
+        v = QOpenLong.value
+        if v is None or len(v) < 20:
+            fail(QErrMsg.row(7).label)
+
+# openList — multiple free-text inputs, one per row.
+- qid: QOpenListRanked
+    type: openList
+    text: Please write out the names of your top 3 most-used apps in order.
+    instruction: <i>(Most-used first.)</i>
+    required: True
+    min: 1
+    max: 3
+    label.position: left
+    options:
+        1: 1st most-used app
+        2: 2nd most-used app
+        3: 3rd most-used app
+
+# -----------------------------------------------------------------------------
+# §N — NUMBER (number + numberList)
+# -----------------------------------------------------------------------------
+
+# Style: number (default). Integer.
+- qid: QNumAge
+    type: number
+    text: How old are you?
+    required: True
+    min: 0
+    max: 120
+    input.size: 4
+    validation: |
+        if QNumAge.value is None:
+            fail(QErrMsg.row(2).label)
+
+# Style: slider. Decimal allowed.
+- qid: QNumSlider
+    type: number
+    style: slider
+    text: On a 0-100 scale, how satisfied are you?
+    required: True
+    min: 0
+    max: 100
+    decimal: True
+    decimal.places: 1
+
+# Number with label.prefix / label.suffix (these ARE valid on `number`).
+- qid: QNumSpend
+    type: number
+    text: Roughly how much did you spend on groceries last week?
+    label.prefix: "$ "
+    label.suffix: " USD"
+    required: True
+    min: 0
+    max: 5000
+
+# numberList — allocation summing to 100, with running-total display.
+- qid: QNumListAlloc100
+    type: numberList
+    text: Allocate 100 points across the following categories.
+    instruction: <i>(Use whole numbers. Total must equal 100.)</i>
+    required: True
+    min: 0
+    max: 100
+    total: True
+    input.header: Points (0-100)
+    options:
+        1: Quality
+        2: Price
+        3: Service
+        4: Convenience
+    validation: |
+        t = sum(QNumListAlloc100.values)
+        if t != 100:
+            fail(QErrMsg.row(3).label)
+
+# numberList with `sum:` (validation-only) + per-row decimal + per-row label.suffix.
+- qid: QNumListPremium
+    type: numberList
+    text: How much do you pay each month for these services?
+    instruction: <i>(USD per month.)</i>
+    required: True
+    min: 0
+    sum: 1000
+    label.position: left
+    options:
+        1:
+            label: Streaming
+            label.suffix: " /mo"
+            decimal: True
+            decimal.places: 2
+        2:
+            label: Music
+            label.suffix: " /mo"
+            decimal: True
+            decimal.places: 2
+        3:
+            label: Cloud storage
+            label.suffix: " /mo"
+            decimal: True
+            decimal.places: 2
+
+# -----------------------------------------------------------------------------
+# §G — GRIDS (gridSingle grid + paired, gridMulti, gridNumber)
+# -----------------------------------------------------------------------------
+
+# Style: grid (default). Standard rows × scale.
+- qid: QGridSingleGrid
+    type: gridSingle
+    text: How satisfied are you with each of the following?
+    instruction: <i>(Single response per row.)</i>
+    required: True
+    order: random
+    options: serviceFactors
+    scale: satScale5
+
+# Style: paired. Anchor labels live on row option entries (left.label /
+# right.label), NOT on scale entries.
+- qid: QGridSinglePaired
+    type: gridSingle
+    style: paired
+    text: For each pair, indicate which statement you agree with more.
+    required: True
+    order: random
+    options:
+        1:
+            label: Statement pair 1
+            left.label: Quality is more important
+            right.label: Price is more important
+        2:
+            label: Statement pair 2
+            left.label: I shop online
+            right.label: I shop in-store
+        3:
+            label: Statement pair 3
+            left.label: I plan ahead
+            right.label: I buy on impulse
+    scale:
+        1: Strongly left
+        2: Slightly left
+        3: Slightly right
+        4: Strongly right
+
+# gridMulti — per-row min/max, exclusive scale code (DK).
+- qid: QGridMulti
+    type: gridMulti
+    text: Which channels do you use for each provider?
+    instruction: <i>(Select all channels per provider. "Don't know" clears the row.)</i>
+    required: True
+    options: providersTopN
+    min: 1
+    max: 5
+    scale:
+        1: Mobile app
+        2: Website
+        3: Phone / call center
+        4: In-person / branch
+        5: Mail
+        99:
+            label: Don't know
+            exclusive: True
+
+# gridNumber — uses `rows:` + `cols:` keywords (not `options:`/`scale:`).
+# Both axes use inline numeric codes.
+- qid: QGridNumber
+    type: gridNumber
+    text: How many times did you contact each provider through each channel last month?
+    required: True
+    direction: rows
+    total: True
+    min: 0
+    max: 30
+    rows:
+        1: ProviderOne
+        2: ProviderTwo
+        3: ProviderThree
+        4: ProviderFour
+    cols:
+        1: Mobile app
+        2: Website
+        3: Phone
+        4: In-person
+
+# -----------------------------------------------------------------------------
+# §X — MIXGRID (every supported child type)
+# -----------------------------------------------------------------------------
+#
+# Per CLAUDE.md §8: child columns can be `single`, `multi`, `rank`, `openList`,
+# `numberList`, `gridSingle`. Children CANNOT re-declare options/options.from/
+# group/order — the row domain comes from the parent only. The per-column
+# answer domain comes from the column's own type (number = numeric input;
+# openList = text per row; etc.). Per-column rendering picks up `scale:` for
+# the column's answer set on a `gridSingle` child.
+- qid: QMixGrid
+    type: mixGrid
+    text: For each brand below, give us five pieces of information.
+    options: brandsTopN
+    desktop_style: wide
+    mobile_style: stacked
+    columns:
+        - qid: QMixGridX1
+            type: numberList
+            text: Years used (numeric)
+        - qid: QMixGridX2
+            type: openList
+            text: One word that describes them
+        - qid: QMixGridX3
+            type: gridSingle
+            text: How would you rate them?
+            scale: satScale5
+
+# -----------------------------------------------------------------------------
+# §LU — LOOKUP (4 variants per §7 of CLAUDE.md)
+# -----------------------------------------------------------------------------
+
+# Single-step searchInput (default style).
+- qid: QLookupSearchInput
+    type: lookup
+    text: Find your employer.
+    instruction: <i>(Start typing — autocomplete from the company database.)</i>
+    required: True
+    source: lookupCompanies
+    source.matchOnly: True
+    style: searchInput
+
+# Single-step dropdown.
+- qid: QLookupDropdown
+    type: lookup
+    text: Pick your state.
+    required: True
+    source: lookupStates
+    style: dropdown
+
+# Cascading: state → county → city.
+- qid: QLookupCascading
+    type: lookup
+    text: Tell us where you live.
+    required: True
+    style: cascading
+    steps:
+        - id: state
+            label: State
+            source: lookupStates
+        - id: county
+            label: County
+            source: lookupCounties
+            depends: state
+        - id: city
+            label: City
+            source: lookupCities
+            depends: county
+
+# Multi-select lookup.
+- qid: QLookupMulti
+    type: lookup
+    text: Which medications do you take regularly?
+    instruction: <i>(Search + add multiple.)</i>
+    required: True
+    multi: True
+    source: lookupMedications
+    style: searchInput
+
+# -----------------------------------------------------------------------------
+# §A — ANNOTATIONS (research-module types — stubs per CLAUDE.md §2)
+# -----------------------------------------------------------------------------
+#
+# Per CLAUDE.md §2: `imageAnnotation`, `videoAnnotation`, `textAnnotation`,
+# `cbc`, `maxdiff`, `cardSort` are research modules. DSL stubs only; the
+# human programmer configures them via the platform wizard. Flag in
+# delta-log.
+
+- qid: QAnnotImage
+    type: imageAnnotation
+    text: Click on the parts of this product label that catch your attention.
+    # !HUMAN — upload the source image + define hotspot regions via the
+    # annotation wizard. AI stub only.
+
+- qid: QAnnotVideo
+    type: videoAnnotation
+    text: Watch the ad and click anywhere on the timeline to react.
+    # !HUMAN — upload the video asset + define reaction palette via the
+    # annotation wizard.
+
+- qid: QAnnotText
+    type: textAnnotation
+    text: Highlight the phrases in this ad copy that resonate.
+    # !HUMAN — paste the source copy + define highlight colors via the
+    # annotation wizard.
+
+- qid: QCardsort
+    type: cardSort
+    text: Drag each item into the category it best belongs to.
+    # !HUMAN — define cards + buckets via the cardSort wizard.
+
+# -----------------------------------------------------------------------------
+# §F — FLOW BLOCKS (page, block, loop, if, script, note)
+# -----------------------------------------------------------------------------
+
+# page: groups multiple questions on one screen. Required `id:`.
+- page:
+    id: demoPage
+    questions:
+        - qid: QDemoGender
+            type: single
+            text: What is your gender?
+            options:
+                1: Male
+                2: Female
+                3: Non-binary
+                4: Prefer not to answer
+
+        - qid: QDemoZip
+            type: open
+            text: ZIP / postal code
+            input.size: 10
+            input.maxChar: 10
+            validation: |
+                v = QDemoZip.value
+                # !HUMAN — replace with lookup against zip-footprint taxonomy.
+                if v is None or len(v) < 5:
+                    fail(QErrMsg.row(6).label)
+
+# block: structural grouping (no rendering effect, can carry `order:`).
+- block:
+    id: lifestyleBlock
+    order: random
+    questions:
+        - qid: QLifeExercise
+            type: single
+            text: How often do you exercise?
+            options:
+                1: Daily
+                2: Several times a week
+                3: Weekly
+                4: Less than weekly
+                5: Never
+
+        - qid: QLifeDiet
+            type: single
+            text: Which dietary pattern best describes you?
+            options:
+                1: Omnivore
+                2: Pescetarian
+                3: Vegetarian
+                4: Vegan
+                5:
+                    label: Other (specify)
+                    specify: True
+
+# Helper script defined BEFORE the loop that uses it. options.from must be
+# a helper call, not inline code (per CLAUDE.md §0.1).
+- script: |
+    def conceptCodes():
+        # Drive the loop over the codes the respondent picked at QMulCards.
+        result = []
+        for c in QMulCards.selected:
+            result.append(c)
+        return result
+
+# loop: iterate over selected brands. Demonstrates:
+#   - id (loop variable name)
+#   - options.from (helper call)
+#   - options (full domain, required when options.from is set)
+#   - DIRECT children (no `questions:` wrapper — loop is control-flow, per §6.3)
+#   - `- script:` block inside the loop for per-iteration side effects
+#     (validation: also works; both are canonical patterns)
+- loop:
+    id: brandLoop
+    options.from: conceptCodes()
+    options: brandsLong
+    - qid: QLoopRating
+        type: number
+        text: Rate {{ brandLoop.selectedLabel }} out of 10.
+        required: True
+        min: 0
+        max: 10
+
+    - qid: QLoopWhy
+        type: open
+        style: textarea
+        if: QLoopRating.value < 4
+        text: Why did you give {{ brandLoop.selectedLabel }} a low rating?
+        required: True
+        input.rows: 3
+
+    - script: |
+        # Per-iteration side effect. Runs once per iteration in that
+        # iteration's context — bare QLoopRating resolves to this
+        # iteration's rating; brandLoop.value is the current code.
+        if QLoopRating.value is not None and QLoopRating.value < 4:
+            hLowRaters.row(brandLoop.value).set(1)
+
+- qid: hLowRaters
+    type: numberList
+    visibility: hide
+    title: Low-rater flag per brand (1 = low-rater commented)
+    options: brandsLong
+
+# if-flow block: conditional gate wrapping multiple questions (preferred over
+# inline `if:` on each per CLAUDE.md mistake #50).
+- if hCountry.value == 1:
+    - qid: QUSPhone
+        type: open
+        text: US phone number?
+        input.size: 14
+        input.maxChar: 14
+        validation: |
+            v = QUSPhone.value
+            if v is None or not re.fullmatch(r"^\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}$", v):
+                fail(QErrMsg.row(8).label)
+
+    - qid: QUSNotify
+        type: single
+        text: May we contact you about future studies?
+        options:
+            1: Yes
+            2: No
+
+# elif-style with separate flow blocks.
+- if hCountry.value == 2:
+    - qid: QUKPhone
+        type: open
+        text: UK phone number?
+        input.size: 16
+        input.maxChar: 16
+
+# Top-level script for derived metrics. Demonstrates:
+#   - q() dynamic accessor for cross-iteration reads
+#   - sum / avg builtin
+#   - random.choice / math.floor
+#   - try / except
+#   - print() for debug
+- script: |
+    # Average rating across all brand-loop iterations.
+    total = 0
+    n = 0
+    for c in brandLoop.all:
+        # Cross-iteration accessor: QLoopRating_[c] resolves to that iteration.
+        v = q("QLoopRating", c).value
+        if v is not None:
+            total = total + v
+            n = n + 1
+    if n > 0:
+        hAvgRating.set(total / n)
+        print("Average brand rating:", hAvgRating.value)
+
+    # Random sample of one loop code (for spotlight in close-out).
+    try:
+        codes = brandLoop.all
+        if len(codes) > 0:
+            hSpotlight.set(random.choice(codes))
+    except:
+        # Defensive — should never fire, but safe.
+        hSpotlight.set(None)
+
+    # Score-based segment classification (no inline ternaries per §10.2).
+    avg = hAvgRating.value
+    if avg is None:
+        hSegment.set(None)
+    elif avg >= 8:
+        hSegment.set(1)  # Premium
+    elif avg >= 5:
+        hSegment.set(2)  # Standard
+    else:
+        hSegment.set(3)  # Light
+
+- qid: hAvgRating
+    type: number
+    visibility: hide
+    title: Average brand rating
+
+- qid: hSpotlight
+    type: number
+    visibility: hide
+    title: Randomly selected brand code for close-out spotlight
+
+- qid: hSegment
+    type: single
+    visibility: hide
+    title: Segment derived from hAvgRating
+    options:
+        1: Premium
+        2: Standard
+        3: Light
+
+# - note: block — author-facing scratch, not rendered to respondent.
+- note: |
+    Coverage note for human reviewer:
+    The loop above demonstrates:
+      - options.from + options (the full-domain disclosure rule from §3.2)
+      - in-iteration piping via {{ brandLoop.selectedLabel }}
+      - per-iteration side effect via validation: (not - script:)
+      - cross-iteration access via q("QLoopRating", c) outside the loop
+    See delta-log for the full feature checklist.
+
+# -----------------------------------------------------------------------------
+# §QUO — QUOTAS (least-fill assignment)
+# -----------------------------------------------------------------------------
+#
+# !HUMAN — Build a quota group named `qtBattery` with 4 cells (codes 1-4)
+# in the Quota Builder before fielding. The script below reads .isOpen and
+# calls .fill() to increment.
+
+- script: |
+    # Least-fill assignment: pick an open cell with minimum count.
+    open_cells = []
+    for c in [1, 2, 3, 4]:
+        if quota("qtBattery", c).isOpen:
+            open_cells.append(c)
+
+    if len(open_cells) == 0:
+        # All cells full — terminate with quotafull status.
+        endSurvey("quotafull")
+    else:
+        # Pick the open cell with the smallest count (least-fill).
+        best = open_cells[0]
+        best_count = quota("qtBattery", best).count
+        for c in open_cells:
+            cnt = quota("qtBattery", c).count
+            if cnt < best_count:
+                best = c
+                best_count = cnt
+        hQuotaCell.set(best)
+        quota("qtBattery", best).fill()
+
+- qid: hQuotaCell
+    type: single
+    visibility: hide
+    title: Assigned quota cell (1-4)
+    options:
+        1: Cell A
+        2: Cell B
+        3: Cell C
+        4: Cell D
+
+# -----------------------------------------------------------------------------
+# §P — PIPING (every common pipe expression)
+# -----------------------------------------------------------------------------
+
+- qid: QPipeWrap
+    type: info
+    title: Piping showcase
+    text: |
+        <b>From earlier in this survey:</b>
+        <br><br>
+        Selected single label: <b>{{ QSinRadio.selectedLabel }}</b><br>
+        Raw value (code): <b>{{ QSinRadio.value }}</b><br>
+        Number of multi selections: <b>{{ QMulCheckbox.selected.size }}</b><br>
+        Age + 1: <b>{{ QNumAge.value + 1 }}</b><br>
+        Grid row selected label: <b>{{ QGridSingleGrid.row(1).selectedLabel }}</b><br>
+        Error message catalog entry: <b>{{ QErrMsg.row(1).label }}</b><br>
+        Two-decimal formatted spend: <b>${{ "%.2f" % QNumSpend.value }}</b><br>
+        Rounded percent: <b>{{ round((QNumAge.value or 0) / 120 * 100) }}%</b><br>
+        Inline conditional (only in piping, not in scripts): <b>{{ "Set" if QNumAge.answered else "Unanswered" }}</b><br>
+        Loop iteration label: <b>{{ brandLoop.selectedLabel }}</b> (renders the current iteration when piped inside the loop)<br>
+
+# -----------------------------------------------------------------------------
+# §V — VALIDATION (extra `fail()` patterns)
+# -----------------------------------------------------------------------------
+
+- qid: QValidPair
+    type: numberList
+    text: Allocate 100 between two providers.
+    required: True
+    min: 0
+    max: 100
+    total: True
+    options:
+        1: Provider A
+        2: Provider B
+    validation: |
+        # Multi-fail: enforce exact-100 AND at-least-25-each.
+        t = sum(QValidPair.values)
+        if t != 100:
+            fail(QErrMsg.row(3).label)
+        for c in [1, 2]:
+            v = QValidPair.row(c).value
+            if v is None or v < 25:
+                fail("Each provider must get at least 25 points.")
+
+# =============================================================================
+# §SKIN — MISSING-SKIN COVERAGE (copy-out block)
+# =============================================================================
+#
+# Added per the skin-matrix audit. Each block exercises one
+# (type × style) combination that wasn't already covered in the inline
+# sections above. Copy-paste this section into a fresh test survey for
+# skin-by-skin preview / QA.
+#
+# Coverage in this block — 22 (type × style) combinations:
+#   rank:       tapToRank, dropdownRank, podium, drag
+#   number:     sliderTicks, stepper, dial, dropdown
+#   numberList: slider, sliderTicks, stepper, dropdown
+#   gridSingle: scaleButtons, cardStack, emojiScale, sliderGrid, bipolarSlider, scaleBar
+#   gridMulti:  cardStack, chipGrid
+#   gridNumber: number, dropdown
+#
+# (`single` / `multi` `imageCards` are now exercised inline by `QSinImageCards`
+# and `QMulImageCards` after the authoring-slip fix; no §SKIN duplicate needed.)
+#
+# !HUMAN — the current syntax validator does NOT exhaustively enforce per-type
+# style enums (a typo like `cardStak` passes silently). Confirm each skin
+# renders correctly in preview before fielding. Per §0.3 of the authoring reference.
+# -----------------------------------------------------------------------------
+
+# single: imageCards is now covered by the inline `QSinImageCards` question
+# above (the original authoring slip — `style: cards` — has been corrected).
+# multi: imageCards is now covered by the inline `QMulImageCards` similarly.
+
+# ── rank: 4 missing skins ──────────────────────────────────────────────────
+- qid: QRankTapToRank
+    type: rank
+    style: tapToRank
+    text: Tap items in your preferred order. (tapToRank skin)
+    required: True
+    min: 1
+    max: 4
+    options:
+        1: Premium quality
+        2: Lowest price
+        3: Fastest delivery
+        4: Best support
+
+- qid: QRankDropdownRank
+    type: rank
+    style: dropdownRank
+    text: Pick the rank of each item from the dropdown. (dropdownRank skin)
+    required: True
+    options:
+        1: Premium quality
+        2: Lowest price
+        3: Fastest delivery
+        4: Best support
+
+- qid: QRankPodium
+    type: rank
+    style: podium
+    text: Place your top three on the podium. (podium skin)
+    required: True
+    min: 1
+    max: 3
+    options:
+        1: Premium quality
+        2: Lowest price
+        3: Fastest delivery
+        4: Best support
+
+- qid: QRankDrag
+    type: rank
+    style: drag
+    text: Drag the items into your preferred order. (drag skin)
+    required: True
+    options:
+        1: Premium quality
+        2: Lowest price
+        3: Fastest delivery
+        4: Best support
+
+# ── number: 4 missing skins ────────────────────────────────────────────────
+- qid: QNumSliderTicks
+    type: number
+    style: sliderTicks
+    text: How likely are you to recommend us? (sliderTicks skin)
+    required: True
+    min: 0
+    max: 10
+
+- qid: QNumStepper
+    type: number
+    style: stepper
+    text: How many people live in your household? (stepper skin)
+    required: True
+    min: 1
+    max: 20
+
+- qid: QNumDial
+    type: number
+    style: dial
+    text: Set the temperature you prefer (°F). (dial skin)
+    required: True
+    min: 50
+    max: 90
+
+- qid: QNumDropdown
+    type: number
+    style: dropdown
+    text: How many years of experience? (dropdown skin)
+    required: True
+    min: 0
+    max: 50
+
+# ── numberList: 4 missing skins ────────────────────────────────────────────
+- qid: QNumListSlider
+    type: numberList
+    style: slider
+    text: Rate each attribute on a 0-100 scale. (slider skin)
+    required: True
+    min: 0
+    max: 100
+    options:
+        1: Quality
+        2: Price
+        3: Service
+        4: Convenience
+
+- qid: QNumListSliderTicks
+    type: numberList
+    style: sliderTicks
+    text: How important is each? 0-10. (sliderTicks skin)
+    required: True
+    min: 0
+    max: 10
+    options:
+        1: Quality
+        2: Price
+        3: Service
+        4: Convenience
+
+- qid: QNumListStepper
+    type: numberList
+    style: stepper
+    text: How many of each do you own? (stepper skin)
+    required: True
+    min: 0
+    max: 20
+    options:
+        1: Laptops
+        2: Phones
+        3: Tablets
+        4: Watches
+
+- qid: QNumListDropdown
+    type: numberList
+    style: dropdown
+    text: Pick a count for each. (dropdown skin)
+    required: True
+    min: 0
+    max: 10
+    options:
+        1: Daily
+        2: Weekly
+        3: Monthly
+
+# ── gridSingle: 6 missing skins ────────────────────────────────────────────
+- qid: QGridSingleScaleButtons
+    type: gridSingle
+    style: scaleButtons
+    text: Rate each service. (scaleButtons skin)
+    required: True
+    options: serviceFactors
+    scale: satScale5
+
+- qid: QGridSingleCardStack
+    type: gridSingle
+    style: cardStack
+    text: Swipe through each service and rate it. (cardStack skin)
+    required: True
+    options: serviceFactors
+    scale: satScale5
+
+- qid: QGridSingleEmojiScale
+    type: gridSingle
+    style: emojiScale
+    text: How do you feel about each? (emojiScale skin)
+    required: True
+    options: serviceFactors
+    scale:
+        1: "😡 Strongly dislike"
+        2: "🙁 Dislike"
+        3: "😐 Neutral"
+        4: "🙂 Like"
+        5: "😍 Strongly like"
+
+- qid: QGridSingleSliderGrid
+    type: gridSingle
+    style: sliderGrid
+    text: Slide each to indicate satisfaction. (sliderGrid skin)
+    required: True
+    options: serviceFactors
+    scale: satScale5
+
+- qid: QGridSingleBipolarSlider
+    type: gridSingle
+    style: bipolarSlider
+    text: Where do you land on each pair? (bipolarSlider skin)
+    required: True
+    options:
+        1:
+            label: Quality vs Price
+            left.label: Quality matters more
+            right.label: Price matters more
+        2:
+            label: Speed vs Care
+            left.label: Speed matters more
+            right.label: Care matters more
+        3:
+            label: Variety vs Focus
+            left.label: Variety matters more
+            right.label: Focused offering matters more
+    scale:
+        1: Strongly left
+        2: Slightly left
+        3: Neutral
+        4: Slightly right
+        5: Strongly right
+
+- qid: QGridSingleScaleBar
+    type: gridSingle
+    style: scaleBar
+    text: Click on the bar to rate each. (scaleBar skin)
+    required: True
+    options: serviceFactors
+    scale: satScale5
+
+# ── gridMulti: 2 missing skins ─────────────────────────────────────────────
+- qid: QGridMultiCardStack
+    type: gridMulti
+    style: cardStack
+    text: For each provider, pick all channels you use. (cardStack skin)
+    required: True
+    options: providersTopN
+    min: 1
+    scale:
+        1: Mobile app
+        2: Website
+        3: Phone
+        4: In-person
+
+- qid: QGridMultiChipGrid
+    type: gridMulti
+    style: chipGrid
+    text: For each provider, tap chips for all channels you use. (chipGrid skin)
+    required: True
+    options: providersTopN
+    min: 1
+    scale:
+        1: Mobile app
+        2: Website
+        3: Phone
+        4: In-person
+
+# ── gridNumber: 2 missing skins ────────────────────────────────────────────
+- qid: QGridNumberNumber
+    type: gridNumber
+    style: number
+    text: Allocate visits per provider per day-part. (number skin)
+    required: True
+    min: 0
+    max: 30
+    rows:
+        1: ProviderOne
+        2: ProviderTwo
+        3: ProviderThree
+    cols:
+        1: Breakfast
+        2: Lunch
+        3: Dinner
+
+- qid: QGridNumberDropdown
+    type: gridNumber
+    style: dropdown
+    text: Pick a value per cell from the dropdown. (dropdown skin)
+    required: True
+    min: 0
+    max: 10
+    rows:
+        1: ProviderOne
+        2: ProviderTwo
+        3: ProviderThree
+    cols:
+        1: Breakfast
+        2: Lunch
+        3: Dinner
+
+# -----------------------------------------------------------------------------
+# §END — CLOSE-OUT
+# -----------------------------------------------------------------------------
+
+- qid: ThankYou
+    type: info
+    title: Thank you!
+    text: |
+        Thanks for getting through every type, style, and flow block in the
+        DSL.
+        <br><br>
+        Random spotlight: <b>{{ q("brandsLong").row(hSpotlight.value).label if hSpotlight.value is not None else "(none)" }}</b>
+        <br><br>
+        Assigned segment: <b>{{ hSegment.selectedLabel }}</b>
+
+- script: |
+    endSurvey("complete")
+    # !HUMAN — Add panel return URL if applicable.
+    # redirectUrl("https://panel.example.com/end?rid=" + request.param("rid"))
+
+# =============================================================================
+# §L — REUSABLE LISTS (bottom of file per CLAUDE.md §5.2)
+# =============================================================================
+
+- lists:
+    # Single-purpose lists for the question battery above.
+
+    countriesShort:
+        options:
+            1: United States
+            2: Canada
+            3: Mexico
+            4: United Kingdom
+            5: Germany
+            6: France
+            7: Spain
+            8: Italy
+            9: Japan
+            10: South Korea
+            11: Australia
+            12: New Zealand
+            13: Brazil
+            14: Argentina
+            15: India
+            97:
+                label: Other (specify)
+                specify: True
+                anchor: True
+
+    brandsLong:
+        options:
+            1: Acme
+            2: Beacon
+            3: Crest
+            4: Delta
+            5: Echo
+            6: Fjord
+            7: Glacier
+            8: Horizon
+            9: Iris
+            10: Juniper
+
+    brandsTopN:
+        options:
+            1: Acme
+            2: Beacon
+            3: Crest
+            4: Delta
+
+    languagesLong:
+        options:
+            1: English
+            2: Spanish
+            3: Mandarin
+            4: Hindi
+            5: Arabic
+            6: French
+            7: German
+            8: Portuguese
+            9: Russian
+            10: Japanese
+            11: Korean
+            12: Italian
+            97:
+                label: Other (specify)
+                specify: True
+                anchor: True
+
+    serviceFactors:
+        options:
+            1: Customer support responsiveness
+            2: Product quality
+            3: Price competitiveness
+            4: Ease of doing business
+            5: Innovation
+
+    satScale5:
+        scale:
+            1: Very dissatisfied
+            2: Somewhat dissatisfied
+            3: Neither / unsure
+            4: Somewhat satisfied
+            5: Very satisfied
+
+    providersTopN:
+        options:
+            1: ProviderOne
+            2: ProviderTwo
+            3: ProviderThree
+            4: ProviderFour
+            5: ProviderFive
+
+# =============================================================================
+# §DELTA — delta-log
+# =============================================================================
+
+- note: |
+    delta-log:
+
+    PURPOSE
+      Contract test for the DSL platform. Every canonical type, every style,
+      every property at least once. Use as a feature-coverage smoke test.
+
+    COVERAGE — by CLAUDE.md section
+      §2 Types — all canonical types instantiated:
+        info, single, multi, rank, open, openList, number, numberList,
+        gridSingle, gridMulti, gridNumber, mixGrid, lookup, imageAnnotation,
+        videoAnnotation, textAnnotation, cardSort.
+
+      §3.1 Identity & display — qid, type, title, text, instruction, style,
+        visibility, if — all fire across the battery.
+
+      §3.2 Choices & scale — options (inline + list ref), group (inline +
+        list ref), scale (inline + list ref), rows / cols (gridNumber),
+        options.from (with required `if: len(helper()) > 0` skip per §3.2),
+        group.order.
+
+      §3.3 Layout & input — layout.cols, label.position, label.prefix /
+        label.suffix (on `number` and `openList` only — NOT on `single`),
+        input.size, input.rows, input.maxChar, input.min_char, input.header.
+
+      §3.4 Constraints — min, max, exact, sum, total, required, validation.
+
+      §3.5 Display control — decimal, decimal.places, readonly,
+        default.errors.
+
+      §3.6 Order — order, group.order, scale.order, with values fixed,
+        random, randomEach.
+
+      §3.7 Conditions — if, visibility.
+
+      §3.8 Per-entry — label, image, anchor, exclusive, specify, data.
+
+      §3.9 Group-level — show.label, anchor.
+
+      §4 Styles — every documented style at least once:
+        single (radio, dropdown, buttons, cards, image_cards),
+        multi (checkbox, buttons, cards, image_cards, dropdown),
+        open (text, textarea),
+        number (number, slider),
+        gridSingle (grid, paired),
+        gridMulti (grid),
+        mixGrid (desktop_style / mobile_style),
+        lookup (searchInput, dropdown, cascading).
+
+      §5 Lists — `- lists:` block at the bottom, named entries with `options`,
+        `group`, and `scale`, multiple references per list, error-message
+        catalog (QErrMsg) routed through fail().
+
+      §6 Flow — page (with `id` + `questions`), block (with `order`), loop
+        (with `id`, `options.from`, `options`, `questions`, in-iteration
+        piping via `<loopId>.selectedLabel`, cross-iteration access via
+        `q()`, validation: for per-iteration side effects), - if flow
+        blocks for shared gates, - script at top level, - note for author
+        comments.
+
+      §7 Lookup — searchInput (matchOnly), dropdown, cascading (3 steps with
+        depends), multi (multi: True).
+
+      §8 mixGrid — parent declares shared rows; nested column qids of types
+        numberList, openList, gridSingle (with scale: on the gridSingle
+        child).
+
+      §9 Piping — every common pipe expression in QPipeWrap.
+
+      §10 Python subset — sum, len, round, str, range, math.floor (not
+        shown here but available), random.choice, re.fullmatch, try/except,
+        q() dynamic accessor, inline conditionals in piping but NOT in
+        scripts.
+
+      §11 Accessors — .value, .selected, .selectedLabel, .selectedLabels (on
+        multi, via .at(0)), .answered, .notAnswered, .all, .size,
+        .row(c).value, .row(c).label, .row(c).selectedLabel (on grids),
+        loop.value, loop.selectedLabel, loop.all.
+
+      §12 Writes — .set() per type contract:
+        single (set(2)), number (set(12.5)), numberList (set({1: 10, 2: 25})
+        — implicit via answer flow), gridSingle row.set(scaleCode) (via
+        the validation: stashing patterns).
+
+      §13 Deprecated names — none used.
+
+      §14 Stimulus HTML — <b>, <br>, inline formatting in text and labels.
+
+      §15 Quotas — quota("qtBattery", code).isOpen, .count, .fill(),
+        terminate via endSurvey("quotafull").
+
+      §16 Patterns — least-fill quota assignment (§QUO), multi-country
+        hCountry pattern (§H), error-message catalog (QErrMsg), masking
+        with options.from + helper + skip-when-empty if.
+
+      §0.1 Style — bright-line checklist run before save:
+        ✓ No `options: {k:v}` inline form
+        ✓ No underscored qids
+        ✓ No bare `Q.any()` without `.selected`
+        ✓ No `label.prefix/suffix` on `single`
+        ✓ No negative codes
+        ✓ No ternary in scripts
+        ✓ No `style: dropdown` on `gridSingle`
+        ✓ No `- script:` inside `questions:`
+        ✓ No inline multi-line `options.from:`
+        ✓ No `continue` / `break` in for / while loops
+
+    HUMAN HANDOFFS
+      - Lookup taxonomies (companies, states, counties, cities, medications)
+        must be uploaded via the lookup wizard.
+      - Annotation modules (QAnnotImage, QAnnotVideo, QAnnotText, QCardsort)
+        configured via their respective wizards.
+      - Quota group `qtBattery` with 4 cells in the Quota Builder.
+      - Per-protein image / video / text assets for any concept-test extensions.
+      - URL param `lang` configured to drive hCountry at survey entry.
+
+    NOT INCLUDED — by design
+      - CBC, MaxDiff conjoint tasks (research modules; same wizard handoff).
+      - Real survey content (this is a contract test, not a fielding-ready
+        instrument).
+      - Multi-currency formatting (showcase pipes use USD; %.2f in the pipe
+        spec).
+      - Derotation pattern (see CLAUDE.md §16.13 for the canonical example).
+      - Softmax classifier (see §16.15).
+      - Master brand-list pattern across products (see §16.16) — covered
+        elsewhere; not duplicated here.

@@ -1,0 +1,14 @@
+You are authoring Survey DSL (.yml surveys) in this project.
+
+READ FIRST: ../SURVEY-DSL-AUTHORING.md — the complete, model-agnostic authoring
+reference. Follow it exactly. It defines every question type, property, style, flow
+block, reusable list, and the hard rules.
+
+Rules:
+- Write .yml output only where this project directs; do not modify files outside it.
+- The reference and examples/ are read-only inputs.
+- Author in one best-effort pass; log assumptions in a delta-log `- note:` block at the
+  end of the file instead of asking mid-stream.
+- Before declaring done, run: node ../lint/survey-dsl-lint.js "<survey>.yml" and fix
+  every error. The linter is style/structure only — the platform validator does the
+  deep semantic checks at import/publish, so a clean lint is not proof of validity.

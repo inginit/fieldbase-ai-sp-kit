@@ -1,0 +1,12 @@
+# Internal / not-for-distribution artifacts
+HANDOFF.md
+_source-copy/
+_needs-review/
+
+# Source briefs (client questionnaires must never be committed)
+*.docx
+*.doc
+
+# OS / tooling noise
+.DS_Store
+node_modules/

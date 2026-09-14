@@ -1,0 +1,24 @@
+{
+  "name": "survey-dsl-kit",
+  "version": "0.1.0",
+  "description": "Model-agnostic authoring reference + standalone style linter for Survey DSL.",
+  "license": "MIT",
+  "homepage": "https://thefieldbase.com",
+  "bin": {
+    "survey-dsl-lint": "lint/survey-dsl-lint.js"
+  },
+  "scripts": {
+    "lint": "node lint/survey-dsl-lint.js",
+    "lint:examples": "node lint/survey-dsl-lint.js examples/*.yml"
+  },
+  "files": [
+    "SURVEY-DSL-AUTHORING.md",
+    "lint/",
+    "examples/",
+    "integrations/",
+    "LICENSE",
+    "README.md",
+    "CONTRIBUTING.md"
+  ],
+  "dependencies": {}
+}
