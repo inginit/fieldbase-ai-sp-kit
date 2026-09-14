@@ -10,7 +10,8 @@
   "scripts": {
     "lint": "node lint/survey-dsl-lint.js",
     "lint:examples": "node lint/survey-dsl-lint.js examples/*.yml",
-    "lint:py": "python3 lint/survey_dsl_lint.py"
+    "lint:py": "python3 lint/survey_dsl_lint.py",
+    "build:skill": "bash scripts/build-claude-skill.sh"
   },
   "files": [
     "SURVEY-DSL-AUTHORING.md",

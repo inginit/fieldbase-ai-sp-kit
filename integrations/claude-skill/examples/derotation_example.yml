@@ -1,0 +1,415 @@
+# surveyid: derotation
+
+- note: |
+    DEROTATION EXAMPLE — coded per the user-revised pattern (2026-05-10).
+
+    Scenario: a concept test with 5 concepts in the pool (Concept A–E). Each
+    respondent sees 2 concepts via least-fill assignment, then answers the
+    same 5 questions about each concept inside a loop.
+
+    Three things this example demonstrates:
+      1. Inline punch inside the loop body is the preferred derotation form.
+         The post-loop alternative using Q1_[c] is shown as a reference note
+         right after the loop, for cases that need cross-iteration logic.
+      2. Slots are organized BY CONCEPT (Q1Concept1, Q2Concept1, ..., Q5Concept1,
+         then Q1Concept2, Q2Concept2, ...) — not by question. The analyst
+         reads all of Concept 1's data together.
+      3. Multi-stage least-fill in a single script using .minus() between picks.
+
+# =============================================================================
+# TEST SCAFFOLD
+# =============================================================================
+
+- qid: info1
+    type: info
+    text: random concept assignment
+
+- script: |
+    # Test scaffold — gates the derotation slot block below.
+    test1.set(1)
+
+- qid: test1
+    type: single
+    options:
+        1: test
+        2: live
+
+# =============================================================================
+# LEAST-FILL ASSIGNMENT — both concepts picked in a single script
+# =============================================================================
+# Prerequisite: human creates a quota named "qtconcept" with cells 1–5
+# matching the conceptList options. Targets per project plan.
+
+- script: |
+    # Build candidates of open quota cells, pick concept 1, then pick concept 2
+    # from the remaining open cells. hConcept (multi) carries the union for
+    # the loop's options.from below.
+    candidates = set()
+    for code in hConcept.all:
+        if quota("qtconcept", code).isOpen:
+            candidates.add(code)
+    if len(candidates) > 0:
+        p = random.choice(sorted(candidates))
+        hConcept1.set(p)
+    newCandidates = candidates.minus(p)
+    if newCandidates.size > 0:
+        q1 = random.choice(sorted(newCandidates))
+        hConcept2.set(q1)
+    hConcept.set(hConcept1.selected.union(hConcept2.selected))
+
+- qid: hConcept
+    type: multi
+    visibility: hide
+    title: Assigned concepts (union — drives the loop)
+    options: conceptList
+
+- qid: hConcept1
+    type: single
+    visibility: hide
+    title: Assigned concept 1 (internal)
+    options: conceptList
+
+- qid: hConcept2
+    type: single
+    visibility: hide
+    title: Assigned concept 2 (internal)
+    options: conceptList
+
+# =============================================================================
+# THE LOOP — one iteration per assigned concept, 5 questions each + inline punch
+# =============================================================================
+
+- loop:
+    id: conceptLoop
+    options: conceptList
+    options.from: hConcept.selected
+    - qid: Q1
+        type: single
+        text: How appealing is <b>{{ conceptLoop.selectedLabel }}</b>?
+        required: True
+        options: appealOptions
+
+    - qid: Q2
+        type: single
+        text: How likely would you be to buy <b>{{ conceptLoop.selectedLabel }}</b>?
+        required: True
+        options: likelyOptions
+
+    - qid: Q3
+        type: open
+        style: textarea
+        text: What stood out about <b>{{ conceptLoop.selectedLabel }}</b>?
+        required: True
+        input.size: 40
+        input.rows: 3
+
+    - qid: Q4
+        type: multi
+        text: Which of the following smartphone brands have you personally used in the past 12 months?
+        order: random
+        options:
+            1: Apple
+            2: Samsung
+            3: Xiaomi
+            4: OPPO
+            5: vivo
+            6: Google Pixel
+            7: Huawei
+            8: Motorola
+            99:
+                label: None of these
+                anchor: True
+
+    - qid: Q5
+        type: gridSingle
+        text: Thinking about {{ Q2.selectedLabel }}, how satisfied are you with each of the following?
+        order: random
+        options:
+            1: Camera quality
+            2: Battery life
+            3: Ease of use
+            4: App ecosystem
+            5: Value for money
+        scale:
+            1: Very dissatisfied
+            2: Somewhat dissatisfied
+            3: Neither satisfied nor dissatisfied
+            4: Somewhat satisfied
+            5: Very satisfied
+
+    - script: |
+        # Inline derotation punch — runs once per iteration in this
+        # iteration's context. Bare Q1/Q2/... resolve to this concept's
+        # answers; conceptLoop.value gives the current concept code.
+        # Type-precise accessors: .value for scalars, .selected for collections.
+        iter = conceptLoop.value
+        print("loop index ", iter)
+        if Q1.answered:                          # single
+            q("Q1Concept", iter).set(Q1.value)
+        if Q2.answered:                          # single
+            q("Q2Concept", iter).set(Q2.value)
+        if Q3.answered:                          # open
+            q("Q3Concept", iter).set(Q3.value)
+        if Q4.answered:                          # multi
+            q("Q4Concept", iter).set(Q4.selected)
+        if Q5.answered:                          # gridSingle — row-by-row
+            for c in Q5.all:
+                q("Q5Concept", iter).row(c).set(Q5.row(c).value)
+
+# ── Reference: post-loop punch (alternative) ─────────────────────────────────
+- note: |
+    Alternative — post-loop punch using Qx_[c] cross-iteration accessors.
+    Use this form when the punch logic needs to span multiple loops or run
+    outside the per-iteration context. Inline (above) is preferred otherwise.
+
+    for c in conceptLoop.all:
+        print("loop options", conceptLoop.all)
+        if Q1_[c].answered:                     # single
+            q("Q1Concept", c).set(Q1_[c].value)
+        if Q2_[c].answered:                     # single
+            q("Q2Concept", c).set(Q2_[c].value)
+        if Q3_[c].answered:                     # open
+            q("Q3Concept", c).set(Q3_[c].value)
+        if Q4_[c].answered:                     # multi
+            q("Q4Concept", c).set(Q4_[c].selected)
+        if Q5_[c].answered:                     # gridSingle — row-by-row
+            for f in Q5_[c].all:
+                print("Q5 value ", Q5_[c].row(f).value)
+                q("Q5Concept", c).row(f).set(Q5_[c].row(f).value)
+
+# =============================================================================
+# FULL DEROTATION — 25 fixed slots organized BY CONCEPT
+# =============================================================================
+# One hidden question per (concept × loop question) = 5 × 5 = 25 slots.
+# Slots for unshown concepts stay null. Naming: <questionId>Concept<conceptCode>.
+# Organization is BY CONCEPT (Q1–Q5 for Concept 1 together, then Q1–Q5 for
+# Concept 2, etc.) so the analyst can read each concept's full panel in one
+# pass — instead of jumping across the export for Q1's per-concept rows.
+
+- if test1.value == 1:
+    # ── Concept 1 derotation slots ───────────────────────────────────────────
+    - qid: Q1Concept1
+        type: single
+        visibility: hide
+        title: Q1 → Concept A
+        options: appealOptions
+
+    - qid: Q2Concept1
+        type: single
+        visibility: hide
+        title: Q2 → Concept A
+        options: likelyOptions
+
+    - qid: Q3Concept1
+        type: open
+        visibility: hide
+        title: Q3 → Concept A
+
+    - qid: Q4Concept1
+        type: multi
+        visibility: hide
+        title: Q4 → Concept A
+        options: phoneBrands
+
+    - qid: Q5Concept1
+        type: gridSingle
+        visibility: hide
+        title: Q5 → Concept A
+        options: features
+        scale: satisfiedScale
+
+    # ── Concept 2 derotation slots ───────────────────────────────────────────
+    - qid: Q1Concept2
+        type: single
+        visibility: hide
+        title: Q1 → Concept B
+        options: appealOptions
+
+    - qid: Q2Concept2
+        type: single
+        visibility: hide
+        title: Q2 → Concept B
+        options: likelyOptions
+
+    - qid: Q3Concept2
+        type: open
+        visibility: hide
+        title: Q3 → Concept B
+
+    - qid: Q4Concept2
+        type: multi
+        visibility: hide
+        title: Q4 → Concept B
+        options: phoneBrands
+
+    - qid: Q5Concept2
+        type: gridSingle
+        visibility: hide
+        title: Q5 → Concept B
+        options: features
+        scale: satisfiedScale
+
+    # ── Concept 3 derotation slots ───────────────────────────────────────────
+    - qid: Q1Concept3
+        type: single
+        visibility: hide
+        title: Q1 → Concept C
+        options: appealOptions
+
+    - qid: Q2Concept3
+        type: single
+        visibility: hide
+        title: Q2 → Concept C
+        options: likelyOptions
+
+    - qid: Q3Concept3
+        type: open
+        visibility: hide
+        title: Q3 → Concept C
+
+    - qid: Q4Concept3
+        type: multi
+        visibility: hide
+        title: Q4 → Concept C
+        options: phoneBrands
+
+    - qid: Q5Concept3
+        type: gridSingle
+        visibility: hide
+        title: Q5 → Concept C
+        options: features
+        scale: satisfiedScale
+
+    # ── Concept 4 derotation slots ───────────────────────────────────────────
+    - qid: Q1Concept4
+        type: single
+        visibility: hide
+        title: Q1 → Concept D
+        options: appealOptions
+
+    - qid: Q2Concept4
+        type: single
+        visibility: hide
+        title: Q2 → Concept D
+        options: likelyOptions
+
+    - qid: Q3Concept4
+        type: open
+        visibility: hide
+        title: Q3 → Concept D
+
+    - qid: Q4Concept4
+        type: multi
+        visibility: hide
+        title: Q4 → Concept D
+        options: phoneBrands
+
+    - qid: Q5Concept4
+        type: gridSingle
+        visibility: hide
+        title: Q5 → Concept D
+        options: features
+        scale: satisfiedScale
+
+    # ── Concept 5 derotation slots ───────────────────────────────────────────
+    - qid: Q1Concept5
+        type: single
+        visibility: hide
+        title: Q1 → Concept E
+        options: appealOptions
+
+    - qid: Q2Concept5
+        type: single
+        visibility: hide
+        title: Q2 → Concept E
+        options: likelyOptions
+
+    - qid: Q3Concept5
+        type: open
+        visibility: hide
+        title: Q3 → Concept E
+
+    - qid: Q4Concept5
+        type: multi
+        visibility: hide
+        title: Q4 → Concept E
+        options: phoneBrands
+
+    - qid: Q5Concept5
+        type: gridSingle
+        visibility: hide
+        title: Q5 → Concept E
+        options: features
+        scale: satisfiedScale
+
+- qid: info2
+    type: info
+    text: end of the test
+
+# =============================================================================
+# COMPLETE
+# =============================================================================
+
+- script: |
+    # Mark the respondent as a complete — triggers quota cell increments.
+    endSurvey("complete")
+
+# =============================================================================
+# REUSABLE LISTS
+# =============================================================================
+
+- lists:
+
+    conceptList:
+        options:
+            1: Concept A — fast-charge battery
+            2: Concept B — modular accessories
+            3: Concept C — premium audio
+            4: Concept D — privacy-first cloud
+            5: Concept E — ruggedized outdoor
+
+    appealOptions:
+        options:
+            1: Not at all appealing
+            2: Slightly appealing
+            3: Somewhat appealing
+            4: Very appealing
+            5: Extremely appealing
+
+    likelyOptions:
+        options:
+            1: Definitely would not
+            2: Probably would not
+            3: Might or might not
+            4: Probably would
+            5: Definitely would
+
+    phoneBrands:
+        options:
+            1: Apple
+            2: Samsung
+            3: Xiaomi
+            4: OPPO
+            5: vivo
+            6: Google Pixel
+            7: Huawei
+            8: Motorola
+            99:
+                label: None of these
+                anchor: True
+
+    features:
+        options:
+            1: Camera quality
+            2: Battery life
+            3: Ease of use
+            4: App ecosystem
+            5: Value for money
+
+    satisfiedScale:
+        scale:
+            1: Very dissatisfied
+            2: Somewhat dissatisfied
+            3: Neither satisfied nor dissatisfied
+            4: Somewhat satisfied
+            5: Very satisfied

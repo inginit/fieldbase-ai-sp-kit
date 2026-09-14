@@ -43,6 +43,11 @@ For an AI assistant: load `SURVEY-DSL-AUTHORING.md` as context (or via the shim 
 [`integrations/`](integrations/) for your host), author the survey, then run the
 linter before declaring the task done (§0.2 of the reference).
 
+**Using Claude?** The easiest path is the bundled **Claude Skill** — add it to your Claude
+once and it activates automatically every time you ask for a survey. See
+[`integrations/claude-skill.md`](integrations/claude-skill.md). For ChatGPT, see
+[`integrations/chatgpt-custom-gpt.md`](integrations/chatgpt-custom-gpt.md).
+
 ## What the linter is — and isn't
 
 It catches the frequent, **mechanical** mistakes fast and offline: tabs / non-4-space
@@ -65,7 +70,8 @@ SURVEY-DSL-AUTHORING.md   the authoring reference (knowledge pack)
 lint/survey-dsl-lint.js   the standalone style/structure linter (Node)
 lint/survey_dsl_lint.py   byte-for-byte Python port (for Python/Code-Interpreter use)
 examples/                 validator-clean example surveys (synthetic)
-integrations/             per-host shims (CLAUDE.md, AGENTS.md, .cursorrules)
+integrations/             per-host shims + a drop-in Claude Skill (claude-skill/)
+                          and setup guides (claude-skill.md, chatgpt-custom-gpt.md)
 HANDOFF.md                what was done, provenance, linter calibration, findings
 LICENSE                   MIT
 ```

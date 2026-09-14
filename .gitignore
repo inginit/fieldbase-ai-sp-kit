@@ -7,6 +7,9 @@ _needs-review/
 *.docx
 *.doc
 
+# Built skill archive (regenerate with the zip command in integrations/claude-skill.md)
+*.zip
+
 # OS / tooling noise
 .DS_Store
 node_modules/

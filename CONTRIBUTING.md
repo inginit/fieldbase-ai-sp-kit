@@ -27,6 +27,9 @@ are kept in lock-step. When you add a rule:
    python3 lint/survey_dsl_lint.py examples/*.yml > /tmp/py.out
    diff /tmp/js.out /tmp/py.out   # must be empty
    ```
+5. **Rebuild the Claude Skill.** `integrations/claude-skill/` bundles copies of the pack,
+   examples, and Python linter so it's a portable, self-contained skill. After changing any
+   of those, resync it: `npm run build:skill` (or `bash scripts/build-claude-skill.sh`).
 
 ## Examples
 

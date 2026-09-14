@@ -1,0 +1,175 @@
+# surveyid: blockOrderCapture
+
+- note: |
+    BLOCK ORDER CAPTURE — the seed-mirror pattern (2026-05-10 rewrite).
+
+    The platform's random sort is DETERMINISTIC per respondent: any two
+    randomized N-item things produce the SAME permutation for that
+    respondent (same seed, same N → same shuffle). We exploit that by
+    creating a hidden numberList with `order: random` and the same row
+    count as the randomized target. The hidden question's resolved `.all`
+    walks codes in the same order the parent block was shown.
+
+    Then a single top-level script walks `.all` and punches 1..N into
+    each row, so the hidden list ends up holding presentation positions
+    — no scripts inside the blocks, no idempotency guards, no trip-wires.
+
+    Constraint: the mirror only matches when target and mirror have the
+    same EFFECTIVE row count AND the same `order:` mode. If any sub-block
+    is conditionally hidden, the effective N differs and this breaks.
+    Use a per-block trip-wire only in that edge case.
+
+# =============================================================================
+# HIDDEN ORDER MIRROR
+# =============================================================================
+# Same number of options as mainBlock has sub-blocks (3). Same order: random.
+# The deterministic per-respondent seed guarantees .all on this hidden list
+# matches the resolved random order of mainBlock.
+#
+# Set visibility: show during testing to eyeball the captured order; keep
+# visibility: hide in production.
+
+- qid: hBlockOrder
+    type: numberList
+    visibility: hide
+    order: random
+    title: Block presentation order (1 = shown first, 2 = second, 3 = third)
+    options:
+        1: block1
+        2: block2
+        3: block3
+
+# =============================================================================
+# THE RANDOMIZED PARENT BLOCK
+# =============================================================================
+
+- block:
+    id: mainBlock
+    title: Randomized block set
+    order: random
+    questions:
+        - block:
+            id: block1
+            title: Block 1 — brand awareness
+            questions:
+                - qid: Q1Aware
+                    type: multi
+                    text: Which of the following brands are you aware of?
+                    required: True
+                    min: 1
+                    options: brandList
+
+                - qid: Q1Consider
+                    type: multi
+                    text: Which would you consider for your next phone?
+                    required: True
+                    min: 1
+                    options: brandList
+                    options.from: Q1Aware.selected
+
+        - block:
+            id: block2
+            title: Block 2 — pricing
+            questions:
+                - qid: Q2Price
+                    type: number
+                    text: What's the most you'd pay for a flagship phone?
+                    required: True
+                    min: 0
+                    max: 5000
+                    label.prefix: $
+
+                - qid: Q2Important
+                    type: rank
+                    text: Rank these by importance when choosing a phone.
+                    required: True
+                    options:
+                        1: Price
+                        2: Camera
+                        3: Battery life
+                        4: Brand reputation
+                        5: Operating system
+
+        - block:
+            id: block3
+            title: Block 3 — usage habits
+            questions:
+                - qid: Q3Hours
+                    type: number
+                    text: How many hours per day do you use your phone?
+                    required: True
+                    min: 0
+                    max: 24
+
+                - qid: Q3UseFor
+                    type: multi
+                    text: What do you use it for most?
+                    instruction: Select all that apply.
+                    required: True
+                    min: 1
+                    options:
+                        1: Social media
+                        2: Messaging
+                        3: Email / work
+                        4: Video / streaming
+                        5: Games
+                        6: Photos
+                        7: Navigation
+
+# ── Punch the resolved random order into hBlockOrder ─────────────────────────
+- script: |
+    # Capture randomization order via the seed-mirror pattern.
+    # hBlockOrder.all walks codes in the resolved random order (same per-
+    # respondent seed as mainBlock's randomized children). Position counter i
+    # increments as we walk, so each row ends up holding its own position.
+    i = 0
+    for c in hBlockOrder.all:
+        i = i + 1
+        hBlockOrder.row(c).set(i)
+
+# =============================================================================
+# COMPLETE
+# =============================================================================
+
+- script: |
+    # Mark the respondent as a complete — triggers quota cell increments.
+    endSurvey("complete")
+
+# =============================================================================
+# REUSABLE LISTS
+# =============================================================================
+
+- lists:
+
+    brandList:
+        options:
+            1: Apple
+            2: Samsung
+            3: Google Pixel
+            4: Xiaomi
+            99:
+                label: None of these
+                exclusive: True
+                anchor: True
+
+- note: |
+    Read-back: hBlockOrder_1, hBlockOrder_2, hBlockOrder_3 in the wide export
+    each hold a presentation position. Pivot to "which block was shown
+    first" by finding the row whose value is 1.
+
+    Why this works: per-respondent seed-locked randomization. The runtime
+    picks a permutation for an N-item randomized set once per respondent,
+    and applies the same permutation everywhere an N-item `order: random`
+    appears. So hBlockOrder with `order: random` and 3 options yields the
+    same shuffle as mainBlock with `order: random` and 3 sub-blocks.
+
+    Constraints:
+      • Same count: hBlockOrder must have the same number of options as the
+        target has children. 3 sub-blocks ↔ 3 options.
+      • Same order: mode: both must use the same shuffle (random, flip,
+        reverse, alphabetical, fixed — all seed-deterministic). `randomEach`
+        breaks the mirror because it re-rolls per show.
+      • All children visible: if any sub-block has `if:` that hides it for
+        some respondents, the effective N differs from the mirror's N and
+        the permutations won't match. For conditional cases, use a per-block
+        trip-wire script in an `- if True:` wrapper instead.
