@@ -46,7 +46,8 @@ linter before declaring the task done (§0.2 of the reference).
 **Using Claude?** The easiest path is the bundled **Claude Skill** — add it to your Claude
 once and it activates automatically every time you ask for a survey. See
 [`integrations/claude-skill.md`](integrations/claude-skill.md). For ChatGPT, see
-[`integrations/chatgpt-custom-gpt.md`](integrations/chatgpt-custom-gpt.md).
+[`integrations/chatgpt-custom-gpt.md`](integrations/chatgpt-custom-gpt.md); for Gemini, see
+[`integrations/gemini-gem.md`](integrations/gemini-gem.md).
 
 ## What the linter is — and isn't
 
