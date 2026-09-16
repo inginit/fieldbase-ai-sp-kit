@@ -1,0 +1,1193 @@
+# =============================================================================
+# STREAMING WARS 2026 — MULTI-MARKET BRAND TRACKER
+# =============================================================================
+#
+# SOURCE: synthetic programming spec (demo)
+# Markets: US / UK / CA / AU (country picked in-survey at S1, not URL param)
+# Target: n=1,250 completes (see §DELTA quotas)
+# LOI: ~12 minutes
+#
+# Coded per the latest CLAUDE.md (§0.1 checklist, §6.3 direct-children loops
+# where used, §14b custom-code runtime NOT used, §10 comments inert).
+#
+# !HUMAN — Three quotas required in the Quota Builder:
+#   1. qtAgeGender — 6 cells (see §DELTA)
+#   2. qtMarket    — 4 cells (US 500 / UK 350 / CA 200 / AU 200)
+#   3. qtViewer    — 3 cells (cord-cutter 500 / hybrid 500 / traditional 250)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# CONFIG / ERROR MESSAGES
+# -----------------------------------------------------------------------------
+
+- qid: QErrMsg
+    type: multi
+    visibility: hide
+    title: Validation error messages
+    options:
+        1: Please provide a response.
+        2: Please enter a number.
+        3: Please enter a valid number of subscriptions (0-15).
+        4: Please enter at least 20 characters.
+        5: Please enter a value between $0 and $50.
+        6: Please rank all shown services.
+
+# -----------------------------------------------------------------------------
+# SECTION A: SCREENING
+# -----------------------------------------------------------------------------
+
+- qid: Intro
+    type: info
+    title: Welcome
+    text: |
+        Thank you for participating in this research about streaming video services.
+        <br><br>
+        The survey takes about <b>12 minutes</b> to complete. Your responses will be kept confidential.
+
+- qid: S1
+    type: single
+    text: In which country do you currently live?
+    instruction: <i>(Single response)</i>
+    required: True
+    options:
+        1: United States
+        2: United Kingdom
+        3: Canada
+        4: Australia
+
+# Punch hMarket immediately after S1 — carries the country label for piping
+# and quota. Note: the qnr says "SET FROM SELECTED LABEL" — we store the code
+# instead and pipe via {{ hMarket.selectedLabel }} for text substitution.
+- script: |
+    if S1.value is not None:
+        hMarket.set(S1.value)
+
+- qid: hMarket
+    type: single
+    visibility: hide
+    title: Market (from S1) — used for piping and qtMarket quota
+    options:
+        1: United States
+        2: United Kingdom
+        3: Canada
+        4: Australia
+
+# Fire the market quota check right after hMarket is set.
+- script: |
+    if hMarket.value is not None:
+        cell = hMarket.value
+        if not quota("qtMarket", cell).isOpen:
+            endSurvey("quotafull")
+        else:
+            quota("qtMarket", cell).fill()
+
+- qid: S2
+    type: single
+    text: Which of the following age groups do you belong to?
+    instruction: <i>(Single response)</i>
+    required: True
+    options:
+        1: 18-24
+        2: 25-34
+        3: 35-44
+        4: 45-54
+        5: 55-64
+        6: 65 or older
+
+# Terminate 65+.
+- script: |
+    if S2.selected.any(6):
+        endSurvey()
+
+# hAgeGroup derivation: qnr banner categories (used for qtAgeGender cell derive).
+# Per qnr: 18-34 = codes 1-2; 35-54 = codes 3-4; 55-64 = code 5.
+- script: |
+    if S2.selected.any([1, 2]):
+        hAgeGroup.set(1)
+    elif S2.selected.any([3, 4]):
+        hAgeGroup.set(2)
+    elif S2.selected.any(5):
+        hAgeGroup.set(3)
+
+- qid: hAgeGroup
+    type: single
+    visibility: hide
+    title: Age band (18-34 / 35-54 / 55-64) for qtAgeGender derivation
+    options:
+        1: 18-34
+        2: 35-54
+        3: 55-64
+
+- qid: S3
+    type: single
+    text: What is your gender?
+    instruction: <i>(Single response)</i>
+    required: True
+    options:
+        1: Male
+        2: Female
+        3: Non-binary
+        4: Prefer not to say
+
+# hAgeGenderCell — 1 of 6 quota cells per qnr. Only fires when S3 is
+# Male/Female; non-binary and PNTA respondents skip the quota check and
+# continue (flagged !HUMAN).
+#
+# !HUMAN — confirm handling of Non-binary / Prefer-not-to-say at S3. The qnr
+# defines Age×Gender cells for Male and Female only. Options: (a) let them
+# continue without a quota cell (current implementation), (b) terminate,
+# (c) allocate them to a fallback cell. Currently: they continue.
+- script: |
+    ag = hAgeGroup.value
+    g = S3.value
+    cell = None
+    if g == 1 and ag == 1:
+        cell = 1  # Male 18-34
+    elif g == 1 and ag == 2:
+        cell = 2  # Male 35-54
+    elif g == 1 and ag == 3:
+        cell = 3  # Male 55-64
+    elif g == 2 and ag == 1:
+        cell = 4  # Female 18-34
+    elif g == 2 and ag == 2:
+        cell = 5  # Female 35-54
+    elif g == 2 and ag == 3:
+        cell = 6  # Female 55-64
+
+    if cell is not None:
+        hAgeGenderCell.set(cell)
+        if not quota("qtAgeGender", cell).isOpen:
+            endSurvey("quotafull")
+        else:
+            quota("qtAgeGender", cell).fill()
+
+- qid: hAgeGenderCell
+    type: single
+    visibility: hide
+    title: Age × Gender interlocked quota cell (1-6)
+    options:
+        1: Male 18-34
+        2: Male 35-54
+        3: Male 55-64
+        4: Female 18-34
+        5: Female 35-54
+        6: Female 55-64
+
+- qid: S4
+    type: single
+    text: What is your current employment status?
+    instruction: <i>(Single response — classification only)</i>
+    required: True
+    options:
+        1: Employed full-time
+        2: Employed part-time
+        3: Student
+        4: Retired
+        5: Unemployed
+        6: Self-employed
+
+- qid: S5
+    type: single
+    text: What is your annual household income before tax?
+    instruction: <i>(Single response)</i>
+    required: True
+    options:
+        1: Under $25,000
+        2: $25,000 – $49,999
+        3: $50,000 – $74,999
+        4: $75,000 – $99,999
+        5: $100,000 – $149,999
+        6: $150,000 or more
+        7: Prefer not to say
+
+# hIncomeGroup: 1=low, 2=mid, 3=high, 4=undisclosed per qnr.
+- script: |
+    if S5.selected.any([1, 2]):
+        hIncomeGroup.set(1)
+    elif S5.selected.any([3, 4]):
+        hIncomeGroup.set(2)
+    elif S5.selected.any([5, 6]):
+        hIncomeGroup.set(3)
+    elif S5.selected.any(7):
+        hIncomeGroup.set(4)
+
+- qid: hIncomeGroup
+    type: single
+    visibility: hide
+    title: Income band (low / mid / high / undisclosed)
+    options:
+        1: low
+        2: mid
+        3: high
+        4: undisclosed
+
+- qid: S6
+    type: single
+    text: How do you primarily watch TV and video content?
+    instruction: <i>(Single response)</i>
+    required: True
+    options:
+        1: Streaming services only
+        2: Mostly streaming with some traditional TV
+        3: An equal mix of streaming and traditional TV
+        4: Mostly traditional TV with some streaming
+        5: Traditional TV only
+        6: I do not watch TV or video content
+
+# Terminate non-viewers.
+- script: |
+    if S6.selected.any(6):
+        endSurvey()
+
+# hViewerType derivation + qtViewer quota check.
+- script: |
+    if S6.selected.any(1):
+        hViewerType.set(1)          # cord-cutter
+    elif S6.selected.any([2, 3]):
+        hViewerType.set(2)          # hybrid
+    elif S6.selected.any([4, 5]):
+        hViewerType.set(3)          # traditional
+
+    v = hViewerType.value
+    if v is not None:
+        if not quota("qtViewer", v).isOpen:
+            endSurvey("quotafull")
+        else:
+            quota("qtViewer", v).fill()
+
+- qid: hViewerType
+    type: single
+    visibility: hide
+    title: Viewer type (cord-cutter / hybrid / traditional) for qtViewer
+    options:
+        1: cord-cutter
+        2: hybrid
+        3: traditional
+
+- qid: S7
+    type: number
+    text: How many streaming service subscriptions does your household currently pay for?
+    instruction: <i>(Numeric input, 0-15)</i>
+    required: True
+    min: 0
+    max: 15
+    validation: |
+        if S7.value is None or S7.value < 0 or S7.value > 15:
+            fail(QErrMsg.row(3).label)
+
+# Terminate zero-subscription households.
+- script: |
+    if S7.value == 0:
+        endSurvey()
+
+- qid: S8
+    type: single
+    text: Who in your household makes decisions about which streaming services to subscribe to?
+    instruction: <i>(Single response)</i>
+    required: True
+    options:
+        1: Mostly me
+        2: A shared decision
+        3: Someone else decides
+
+# Terminate non-decision-makers.
+- script: |
+    if S8.selected.any(3):
+        endSurvey()
+
+# -----------------------------------------------------------------------------
+# SECTION B: BRAND FUNNEL
+# -----------------------------------------------------------------------------
+
+- qid: SectionBIntro
+    type: info
+    text: <b>The next questions ask about your familiarity with streaming services.</b>
+
+- qid: Q1
+    type: multi
+    text: Which of the following streaming services have you heard of, even if you have never used them?
+    instruction: <i>(Select all that apply. Randomized order; code 99 is exclusive.)</i>
+    required: True
+    min: 1
+    order: random
+    options:
+        1: Netflix
+        2: Disney+
+        3: Amazon Prime Video
+        4: HBO Max
+        5: Apple TV+
+        6: Hulu
+        7: Paramount+
+        99:
+            label: None of these
+            exclusive: True
+            anchor: True
+
+# Terminate zero-awareness respondents.
+- script: |
+    if Q1.selected.any(99):
+        endSurvey()
+
+# Q2: used in past 6 months. Mask = brands selected at Q1 (excluding 99).
+# Helper defined ABOVE the question per §3.2 masking rule.
+- script: |
+    def q1BrandsAware():
+        result = []
+        for c in Q1.selected:
+            if c != 99:
+                result.append(c)
+        return result
+
+- qid: Q2
+    type: multi
+    if: len(q1BrandsAware()) > 0
+    text: Which of these streaming services have you personally used in the past 6 months?
+    instruction: <i>(Select all that apply.)</i>
+    required: True
+    min: 1
+    options: streamingBrands
+    options.from: q1BrandsAware()
+
+# Terminate no-usage respondents.
+- script: |
+    if Q2.selected.size == 0:
+        endSurvey()
+
+# Q3: currently pay for. Mask = brands selected at Q2.
+- script: |
+    def q2BrandsUsed():
+        result = []
+        for c in Q2.selected:
+            result.append(c)
+        return result
+
+- qid: Q3
+    type: multi
+    if: len(q2BrandsUsed()) > 0
+    text: Which of these streaming services do you currently pay for — either personally or via your household?
+    instruction: <i>(Select all that apply.)</i>
+    required: True
+    min: 0
+    options: streamingBrands
+    options.from: q2BrandsUsed()
+
+# Q4: primary brand. Skip if Q2 count == 1 (auto-code from Q2).
+- qid: Q4
+    type: single
+    if: Q2.selected.size >= 2
+    text: Which one streaming service would you say is your primary service — the one you use most often?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options: streamingBrands
+    options.from: q2BrandsUsed()
+
+# Populate hPrimaryBrand + hPrimaryLabel.
+# When Q2 has only one brand, auto-code both from Q2's sole selection.
+- script: |
+    # When Q4 is asked and answered, use Q4's value directly.
+    if Q4.value is not None:
+        hPrimaryBrand.set(Q4.value)
+    # Auto-code when Q2 has exactly one selection and Q4 was skipped.
+    elif Q2.selected.size == 1:
+        onlyBrand = None
+        for c in Q2.selected:
+            onlyBrand = c
+        if onlyBrand is not None:
+            hPrimaryBrand.set(onlyBrand)
+
+- qid: hPrimaryBrand
+    type: single
+    visibility: hide
+    title: Primary streaming service (from Q4 or auto-coded from Q2)
+    options: streamingBrands
+
+# hPrimaryLabel is intentionally pipe-time only — no separate hidden question
+# needed; use {{ hPrimaryBrand.selectedLabel }} at every pipe site downstream.
+
+# Q5: brands used but not paid for. Mask = Q2 \ Q3. Ask only if len > 0.
+- script: |
+    def q2NotQ3():
+        result = []
+        for c in Q2.selected:
+            if not Q3.selected.any(c):
+                result.append(c)
+        return result
+
+- qid: Q5
+    type: multi
+    if: len(q2NotQ3()) > 0
+    text: Which of these services have you used in the past 6 months but do <b>NOT</b> currently pay for? For example, a free tier, a borrowed login, or a trial.
+    instruction: <i>(Select all that apply.)</i>
+    required: True
+    min: 1
+    options: streamingBrands
+    options.from: q2NotQ3()
+
+# Q6: rank. Only if Q2 count >= 3.
+- qid: Q6
+    type: rank
+    if: Q2.selected.size >= 3
+    text: Please rank these streaming services from your most <b>favourite</b> to least <b>favourite</b>.
+    instruction: <i>(Drag to rank all shown services. Most favourite first.)</i>
+    required: True
+    options: streamingBrands
+    options.from: q2BrandsUsed()
+    validation: |
+        # All shown brands must be ranked.
+        if Q6.values is None or len(Q6.values) < Q2.selected.size:
+            fail(QErrMsg.row(6).label)
+
+# -----------------------------------------------------------------------------
+# SECTION C: PRIMARY BRAND DEEP DIVE
+# -----------------------------------------------------------------------------
+
+- qid: SectionCIntro
+    type: info
+    text: The next questions are specifically about your experience with <b>{{ hPrimaryBrand.selectedLabel }}</b>.
+
+- qid: Q7
+    type: gridSingle
+    text: How satisfied are you with <b>{{ hPrimaryBrand.selectedLabel }}</b> on each of the following?
+    instruction: <i>(One response per row. Randomized.)</i>
+    required: True
+    order: random
+    options:
+        1: Content library — range of shows and films available
+        2: Quality of original shows and films
+        3: User interface and navigation
+        4: Recommendation algorithm
+        5: Video and streaming quality
+        6: Value for money
+        7: Availability across devices
+        8: Download and offline viewing
+    scale:
+        1: Very dissatisfied
+        2: Somewhat dissatisfied
+        3: Neither satisfied nor dissatisfied
+        4: Somewhat satisfied
+        5: Very satisfied
+
+# hSatisfIndex + hLowSatisf derivations — post-Q7 script.
+- script: |
+    # Mean of all Q7 row values.
+    total = 0
+    n = 0
+    for r in Q7.all:
+        v = Q7.row(r).value
+        if v is not None:
+            total = total + v
+            n = n + 1
+    if n > 0:
+        hSatisfIndex.set(total / n)
+
+    # True if ANY row rated 1 or 2.
+    hasLow = False
+    for r in Q7.all:
+        v = Q7.row(r).value
+        if v is not None and v <= 2:
+            hasLow = True
+    if hasLow:
+        hLowSatisf.set(1)
+    else:
+        hLowSatisf.set(2)
+
+- qid: hSatisfIndex
+    type: number
+    visibility: hide
+    title: Mean satisfaction across Q7 rows
+
+- qid: hLowSatisf
+    type: single
+    visibility: hide
+    title: Low-satisfaction flag — 1 if any Q7 row rated 1 or 2
+    options:
+        1: Yes
+        2: No
+
+- qid: Q8
+    type: open
+    style: textarea
+    if: hLowSatisf.selected.any(1)
+    text: What is the main reason you gave those satisfaction ratings for <b>{{ hPrimaryBrand.selectedLabel }}</b>?
+    instruction: <i>(20-500 characters.)</i>
+    required: True
+    input.rows: 4
+    input.maxChar: 500
+    input.min_char: 20
+    validation: |
+        v = Q8.value
+        if v is None or len(v) < 20:
+            fail(QErrMsg.row(4).label)
+
+- qid: Q9
+    type: single
+    style: buttons
+    text: On a scale of 0 to 10, how likely are you to recommend <b>{{ hPrimaryBrand.selectedLabel }}</b> to a friend or colleague?
+    instruction: <i>(0 = Not at all likely, 10 = Extremely likely)</i>
+    required: True
+    options:
+        0: 0 — Not at all likely
+        1: 1
+        2: 2
+        3: 3
+        4: 4
+        5: 5
+        6: 6
+        7: 7
+        8: 8
+        9: 9
+        10: 10 — Extremely likely
+
+# hNPSGroup — 1=detractor (0-6), 2=passive (7-8), 3=promoter (9-10).
+- script: |
+    v = Q9.value
+    if v is not None:
+        if v >= 9:
+            hNPSGroup.set(3)  # promoter
+        elif v >= 7:
+            hNPSGroup.set(2)  # passive
+        else:
+            hNPSGroup.set(1)  # detractor
+
+- qid: hNPSGroup
+    type: single
+    visibility: hide
+    title: NPS bucket (1=detractor, 2=passive, 3=promoter)
+    options:
+        1: detractor
+        2: passive
+        3: promoter
+
+- qid: Q10
+    type: single
+    text: How long have you been subscribed to <b>{{ hPrimaryBrand.selectedLabel }}</b>?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Less than 3 months
+        2: 3 to 6 months
+        3: 6 to 12 months
+        4: 1 to 2 years
+        5: More than 2 years
+
+- qid: Q11
+    type: single
+    text: How often do you use <b>{{ hPrimaryBrand.selectedLabel }}</b> in a typical week?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Every day or almost every day
+        2: 4 to 6 times a week
+        3: 2 to 3 times a week
+        4: About once a week
+        5: Less than once a week
+
+- qid: Q12
+    type: multi
+    text: Which types of content do you most enjoy watching on <b>{{ hPrimaryBrand.selectedLabel }}</b>?
+    instruction: <i>(Select up to 5. Randomized.)</i>
+    required: True
+    min: 1
+    max: 5
+    order: random
+    options:
+        1: Drama series
+        2: Comedy series
+        3: Reality and unscripted shows
+        4: Documentaries
+        5: Action and thriller films
+        6: Comedy films
+        7: Animated content
+        8: Children's content
+        9: Live sports and events
+        10: News and current affairs
+
+- qid: Q13
+    type: gridSingle
+    text: How much do you agree or disagree with each of the following statements about <b>{{ hPrimaryBrand.selectedLabel }}</b>?
+    instruction: <i>(One response per row. Randomized.)</i>
+    required: True
+    order: random
+    options:
+        1: It has the best original content of any streaming service
+        2: It is worth what I pay
+        3: It has content for everyone in my household
+        4: It is easy to find something to watch
+        5: It keeps adding new content I want to see
+        6: I could not imagine cancelling my subscription
+    scale:
+        1: Strongly disagree
+        2: Somewhat disagree
+        3: Neither agree nor disagree
+        4: Somewhat agree
+        5: Strongly agree
+
+- qid: Q14
+    type: single
+    text: Thinking about the last 3 months, has the overall quality of <b>{{ hPrimaryBrand.selectedLabel }}</b> improved, stayed the same, or declined?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Significantly improved
+        2: Somewhat improved
+        3: Stayed about the same
+        4: Somewhat declined
+        5: Significantly declined
+
+- qid: Q15
+    type: open
+    style: textarea
+    if: Q14.selected.any([4, 5])
+    text: What specific improvement would make <b>{{ hPrimaryBrand.selectedLabel }}</b> worth keeping long-term?
+    instruction: <i>(20-500 characters.)</i>
+    required: True
+    input.rows: 4
+    input.maxChar: 500
+    input.min_char: 20
+    validation: |
+        v = Q15.value
+        if v is None or len(v) < 20:
+            fail(QErrMsg.row(4).label)
+
+- qid: Q16
+    type: single
+    text: Have you seen any advertising for <b>{{ hPrimaryBrand.selectedLabel }}</b> in the past month?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Yes, definitely
+        2: Yes, I think so
+        3: No
+        4: Not sure
+
+- qid: Q17
+    type: multi
+    if: Q16.selected.any([1, 2])
+    text: Where did you see or hear advertising for <b>{{ hPrimaryBrand.selectedLabel }}</b>?
+    instruction: <i>(Select all that apply. Randomized order; "Somewhere else" anchored last.)</i>
+    required: True
+    min: 1
+    order: random
+    options:
+        1: Social media (Instagram, TikTok, Facebook, etc.)
+        2: TV commercial
+        3: YouTube ad
+        4: Billboard or outdoor advertising
+        5: Email
+        6: In-app notification or banner
+        7: Podcast ad
+        8:
+            label: Somewhere else
+            anchor: True
+
+- qid: Q18
+    type: open
+    style: textarea
+    if: Q16.selected.any(1)
+    text: What do you remember about the advertising? Please describe what you saw or heard.
+    instruction: <i>(20-300 characters.)</i>
+    required: True
+    input.rows: 3
+    input.maxChar: 300
+    input.min_char: 20
+    validation: |
+        v = Q18.value
+        if v is None or len(v) < 20:
+            fail(QErrMsg.row(4).label)
+
+# -----------------------------------------------------------------------------
+# SECTION D: CONTENT & FEATURES
+# -----------------------------------------------------------------------------
+
+- qid: SectionDIntro
+    type: info
+    text: <b>The next few questions are about specific features and content.</b>
+
+# Q19 gridMulti — rows are features, columns are brands from Q2.
+- qid: Q19
+    type: gridMulti
+    text: Which of these features are important to you, and which streaming services do them well? Please select all services that apply for each feature.
+    instruction: <i>(Grid: rows are features; columns are streaming services. Check every box that applies.)</i>
+    required: True
+    min: 0
+    options:
+        1: 4K and HDR video quality
+        2: Offline download capability
+        3: Multiple user profiles
+        4: Parental controls
+        5: Ad-free viewing experience
+        6: Live sports and events coverage
+    scale: streamingBrandsScale
+    scale.from: q2BrandsUsed()
+
+- qid: Q20
+    type: single
+    if: Q2.selected.size >= 2
+    text: If you could only keep ONE streaming service and had to cancel all others, which would you keep?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options: streamingBrands
+    options.from: q2BrandsUsed()
+
+- qid: Q21
+    type: open
+    style: textarea
+    if: Q20.answered
+    text: Why would you keep <b>{{ Q20.selectedLabel }}</b> over the others?
+    instruction: <i>(20-400 characters.)</i>
+    required: True
+    input.rows: 4
+    input.maxChar: 400
+    input.min_char: 20
+    validation: |
+        v = Q21.value
+        if v is None or len(v) < 20:
+            fail(QErrMsg.row(4).label)
+
+- qid: Q22
+    type: single
+    text: How important is it to you that a streaming service produces its own original content rather than licensing existing films and shows?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Only original content matters to me
+        2: Original content is more important
+        3: An equal mix of both is ideal
+        4: Licensed content is more important
+        5: Only licensed content matters to me
+
+- qid: Q23
+    type: single
+    text: Do you share your streaming account login credentials with anyone outside your household?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Yes, regularly
+        2: Occasionally
+        3: No
+        4: Prefer not to say
+
+- qid: Q24
+    type: single
+    if: Q23.selected.any([1, 2])
+    text: In the past 12 months, have you changed your streaming <b>behaviour</b> as a result of password-sharing crackdowns?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: I stopped sharing my login
+        2: I started paying for an extra member or profile
+        3: I cancelled the service rather than pay more
+        4: No, I have not changed anything
+
+# -----------------------------------------------------------------------------
+# SECTION E: PRICE & VALUE
+# -----------------------------------------------------------------------------
+
+- qid: SectionEIntro
+    type: info
+    text: <b>These next questions are about the value and price of your streaming service.</b>
+
+- qid: Q25
+    type: single
+    text: Approximately what do you currently pay per month for your <b>{{ hPrimaryBrand.selectedLabel }}</b> subscription?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: I use a free or ad-supported tier
+        2: Under $8 per month
+        3: $8 to $12 per month
+        4: $13 to $17 per month
+        5: $18 or more per month
+        6: I am not sure
+        7: Someone else pays for it
+
+# hIsPayer — 1 (paying) if Q25 in [2,3,4,5]; 2 (not paying) otherwise.
+- script: |
+    if Q25.selected.any([2, 3, 4, 5]):
+        hIsPayer.set(1)
+    else:
+        hIsPayer.set(2)
+
+- qid: hIsPayer
+    type: single
+    visibility: hide
+    title: Paying customer flag (1 = paying, 2 = not paying)
+    options:
+        1: Yes
+        2: No
+
+- qid: Q26
+    type: single
+    if: hIsPayer.selected.any(1)
+    text: How do you feel about the price of <b>{{ hPrimaryBrand.selectedLabel }}</b> relative to the value you receive?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Excellent value — I get far more than I pay for
+        2: Good value — worth what I pay
+        3: Fair value — about right for what I get
+        4: Poor value — not quite worth the price
+        5: Very poor value — I pay far too much
+
+- qid: Q27
+    type: number
+    if: hIsPayer.selected.any(1)
+    text: What is the most you would be willing to pay per month for <b>{{ hPrimaryBrand.selectedLabel }}</b> before you would seriously consider cancelling?
+    instruction: <i>(Numeric input, $0-$50.)</i>
+    label.prefix: "$ "
+    label.suffix: " /month"
+    required: True
+    min: 0
+    max: 50
+    decimal: True
+    decimal.places: 2
+    validation: |
+        if Q27.value is None or Q27.value < 0 or Q27.value > 50:
+            fail(QErrMsg.row(5).label)
+
+- qid: Q28
+    type: single
+    if: Q25.selected.any([2, 3, 4, 5])
+    text: If <b>{{ hPrimaryBrand.selectedLabel }}</b> introduced a cheaper plan that included advertisements, how likely would you be to switch to it?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: I would definitely switch to save money
+        2: I would probably switch
+        3: I would probably not switch
+        4: I would definitely not switch — I prefer ad-free
+
+- qid: Q29
+    type: single
+    text: In your opinion, how many streaming service subscriptions is the right number for a household like yours?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Just one
+        2: Two
+        3: Three
+        4: Four or more
+
+- qid: Q30
+    type: single
+    text: Have you ever subscribed to a streaming service just to watch one <b>particular show</b> or film, and then cancelled afterwards?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Yes, I have done this multiple times
+        2: Yes, I have done this once
+        3: No, but I have considered it
+        4: No, I have never done this
+
+# -----------------------------------------------------------------------------
+# SECTION F: CHURN & SWITCHING
+# -----------------------------------------------------------------------------
+
+- qid: SectionFIntro
+    type: info
+    text: <b>Almost done — just a few questions about your future plans.</b>
+
+- qid: Q31
+    type: single
+    text: How likely are you to still be subscribed to <b>{{ hPrimaryBrand.selectedLabel }}</b> six months from now?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: I will definitely still be subscribed
+        2: I will probably still be subscribed
+        3: I might or might not be subscribed
+        4: I will probably not be subscribed
+        5: I will definitely not be subscribed
+
+# hChurnRisk — 1 (at risk) if Q31 in [3, 4, 5]; 2 otherwise.
+- script: |
+    if Q31.selected.any([3, 4, 5]):
+        hChurnRisk.set(1)
+    else:
+        hChurnRisk.set(2)
+
+- qid: hChurnRisk
+    type: single
+    visibility: hide
+    title: Churn-risk flag (1 = at risk, 2 = not at risk)
+    options:
+        1: Yes
+        2: No
+
+- qid: Q32
+    type: multi
+    if: hChurnRisk.selected.any(1)
+    text: What would be the main reasons you would consider cancelling <b>{{ hPrimaryBrand.selectedLabel }}</b>?
+    instruction: <i>(Select all that apply. Randomized order; "Other" anchored last with open specify.)</i>
+    required: True
+    min: 1
+    order: random
+    options:
+        1: It is too expensive
+        2: There is not enough new content being added
+        3: I would switch to a competitor
+        4: I am cutting back on subscriptions generally
+        5: Content I liked was removed
+        6: The overall quality has declined
+        7: Changes to password-sharing rules
+        97:
+            label: Other (please specify)
+            specify: True
+            anchor: True
+
+# Q33: mask = Q1 aware brands MINUS the primary brand.
+- script: |
+    def q1MinusPrimary():
+        result = []
+        for c in Q1.selected:
+            if c != 99 and c != hPrimaryBrand.value:
+                result.append(c)
+        return result
+
+- qid: Q33
+    type: single
+    if: Q32.selected.any(3) and len(q1MinusPrimary()) > 0
+    text: Which streaming service would you most likely switch to if you cancelled <b>{{ hPrimaryBrand.selectedLabel }}</b>?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options: streamingBrands
+    options.from: q1MinusPrimary()
+
+# Q34: compare primary to Q6-top-ranked brand. Ask only if Q6 answered AND
+# top-ranked brand differs from hPrimaryBrand.
+- script: |
+    def q6TopRankBrand():
+        vals = Q6.values
+        if vals is None or len(vals) == 0:
+            return None
+        return vals[0]
+
+    def q34ShouldAsk():
+        top = q6TopRankBrand()
+        if top is None:
+            return False
+        return top != hPrimaryBrand.value
+
+- qid: Q34
+    type: gridSingle
+    if: q34ShouldAsk()
+    text: How does <b>{{ hPrimaryBrand.selectedLabel }}</b> compare to <b>{{ Q6.selectedLabels.at(0) }}</b> on each of the following?
+    instruction: <i>(One response per row.)</i>
+    required: True
+    options:
+        1: Content quality
+        2: Value for money
+        3: User experience and interface
+        4: Content discovery and recommendations
+    scale:
+        1: Much worse than {{ Q6.selectedLabels.at(0) }}
+        2: Somewhat worse
+        3: About the same
+        4: Somewhat better
+        5: Much better than {{ Q6.selectedLabels.at(0) }}
+
+- qid: Q35
+    type: single
+    text: In the past 12 months, how many streaming services have you cancelled?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: None — I have not cancelled any
+        2: One
+        3: Two
+        4: Three
+        5: Four or more
+
+- qid: Q36
+    type: multi
+    if: Q35.selected.any([2, 3, 4, 5])
+    text: Which streaming services did you cancel in the past 12 months?
+    instruction: <i>(Select all that apply.)</i>
+    required: True
+    min: 1
+    options: streamingBrands
+    options.from: q1BrandsAware()
+
+# -----------------------------------------------------------------------------
+# SECTION G: CLASSIFICATION
+# -----------------------------------------------------------------------------
+
+- qid: SectionGIntro
+    type: info
+    text: <b>Finally, just a few questions about you for classification purposes.</b>
+
+- qid: D1
+    type: single
+    text: What is your highest level of education?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: High school diploma or less
+        2: Some college or vocational training
+        3: Bachelor's degree
+        4: Postgraduate degree (Master's, PhD, etc.)
+        5: Prefer not to say
+
+- qid: D2
+    type: single
+    text: Which of the following best describes your household?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Single person, living alone
+        2: Couple, no children at home
+        3: Family with children under 12
+        4: Family with children aged 12-17
+        5: Family with adult children (18+) at home
+        6: Shared household (flatmates, roommates)
+
+- qid: D3
+    type: single
+    text: Which of the following best describes where you live?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Urban — large city or metropolitan area
+        2: Suburban — outside a city but within commuting distance
+        3: Rural — small town or countryside
+
+- qid: D4
+    type: single
+    text: How would you describe your general approach to new technology and digital services?
+    instruction: <i>(Single response.)</i>
+    required: True
+    options:
+        1: Early adopter — I try new things as soon as they are available
+        2: Mainstream — I adopt things once they are well established
+        3: Late adopter — I wait until something is proven and widely used
+        4: Reluctant — I only use technology when I have to
+
+- qid: D5
+    type: info
+    title: Thank you!
+    text: |
+        Thank you for completing this survey.
+        <br><br>
+        Your responses have been recorded and will be kept confidential.
+
+- script: |
+    endSurvey("complete")
+    # !HUMAN — add panel return redirect:
+    # redirectUrl("https://panel.example.com/end?rid=" + request.param("rid"))
+
+# =============================================================================
+# REUSABLE LISTS (bottom of file per CLAUDE.md §5.2)
+# =============================================================================
+
+- lists:
+    # Master brand list — used by Q1 (with anchor 99), and by Q2/Q3/Q4/Q5/Q6/
+    # Q20/Q33/Q36 via masks derived from Q1/Q2 selections.
+    streamingBrands:
+        options:
+            1: Netflix
+            2: Disney+
+            3: Amazon Prime Video
+            4: HBO Max
+            5: Apple TV+
+            6: Hulu
+            7: Paramount+
+
+    # Same brand set, used as SCALE (columns) for Q19 gridMulti.
+    streamingBrandsScale:
+        scale:
+            1: Netflix
+            2: Disney+
+            3: Amazon Prime Video
+            4: HBO Max
+            5: Apple TV+
+            6: Hulu
+            7: Paramount+
+
+# =============================================================================
+# DELTA-LOG — REVIEW BEFORE FIELDING
+# =============================================================================
+
+- note: |
+    delta-log:
+
+    SOURCE
+      synthetic programming spec (demo)
+      Multi-market brand tracker — 4 markets (US/UK/CA/AU), target n=1,250.
+      LOI: 12 minutes.
+
+    STRUCTURE
+      Section A: Screening (S1-S8) with 3 quotas (qtAgeGender / qtMarket /
+        qtViewer) checked in-flow.
+      Section B: Brand funnel (Q1 aware → Q2 use → Q3 pay → Q4 primary →
+        Q5 free-tier → Q6 rank). Dynamic brand masking cascades via
+        options.from helpers.
+      Section C: Primary brand deep dive (Q7-Q18), piping
+        {{ hPrimaryBrand.selectedLabel }} at every user-facing site.
+      Section D: Content & features (Q19-Q24). Q19 is gridMulti with
+        rows = features, scale = brands from Q2 (scale.from = q2BrandsUsed).
+      Section E: Price & value (Q25-Q30), hIsPayer gates Q26/Q27.
+      Section F: Churn (Q31-Q36), hChurnRisk gates Q32, Q34 compares
+        primary vs Q6-top when they differ.
+      Section G: Classification (D1-D4) + thank-you (D5).
+
+    QUOTAS (!HUMAN — build in Quota Builder before fielding)
+      qtAgeGender (interlocked, 6 cells):
+        1 = Male 18-34    (n=250)
+        2 = Male 35-54    (n=250)
+        3 = Male 55-64    (n=125)
+        4 = Female 18-34  (n=250)
+        5 = Female 35-54  (n=250)
+        6 = Female 55-64  (n=125)
+      qtMarket (4 cells):
+        1 = US (n=500) / 2 = UK (n=350) / 3 = CA (n=200) / 4 = AU (n=200)
+      qtViewer (3 cells):
+        1 = cord-cutter (n=500) / 2 = hybrid (n=500) / 3 = traditional (n=250)
+
+    TERMINATIONS (implemented)
+      T1 — S2 code 6 (65+)
+      T2 — S6 code 6 (no TV/video)
+      T3 — S7 value 0 (no subscriptions)
+      T4 — S8 code 3 (not the decision-maker)
+      T5 — Q1 code 99 (no brand awareness)
+      T6 — Q2 empty selection (no brand usage)
+      TQ — quota-full at qtMarket, qtAgeGender, or qtViewer (routes to
+        endSurvey("quotafull"))
+
+    !HUMAN HANDOFFS
+      1. Quota Builder — three groups above.
+      2. Non-binary / Prefer-not-to-say at S3: currently skipped from
+         qtAgeGender and continues. Confirm this is the intended handling.
+      3. Q19 gridMulti — brand set exposed as scale.from = q2BrandsUsed().
+         The DSL's gridMulti-with-dynamic-columns behaviour should be
+         verified in preview (brand columns should shrink to only the
+         brands respondent used).
+      4. hAgeGenderCell handles only the 6 defined Male/Female × age
+         cells; non-binary/PNTA respondents leave the hidden unset.
+      5. Currency piping at Q27 uses "$" — replace with market-specific
+         symbol via {{ }} conditional or a hidden hCurrency if needed.
+      6. Panel return URL — populate the redirectUrl(...) line at the end
+         of the file with the panel provider's return endpoint.
+
+    NOT NEEDED (intentional omissions vs qnr)
+      - No loops. Section C is on the PRIMARY brand only (single-hidden
+        source), not a loop over all brands. Q19 handles multi-brand data
+        via gridMulti + scale.from — no need for a loop.
+      - No custom code — no interactive widgets in the spec.
+      - No cascading lookup — flat single-selects everywhere.
+      - No CBC / MaxDiff / annotations.
+
+    FORMATTING NOTES
+      - Bold emphasis (<b>...</b>) applied on words the qnr bolded:
+        "NOT" in Q5, "particular show" in Q30, "behaviour" in Q24.
+      - Italic instructions (<i>...</i>) applied on programmer-facing
+        parenthetical guides ("(Single response)", "(Select all that
+        apply)").
+      - No <u> underlines used (qnr doesn't underline).
+
+    CONTRACT NOTES (from CLAUDE.md changes)
+      - Loops use direct children (§6.3). This survey has no loops so no
+        migration needed.
+      - Comments are Python-inert (§10). Used freely in scripts.
+      - default.errors boolean-only (§3.5). Not used in this survey —
+        every validation: block uses fail(QErrMsg.row(N).label).
+      - Custom-code runtime (§14b) — not used.

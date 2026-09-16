@@ -39,15 +39,40 @@ port is bundled — same rules, messages, and exit codes:
 python3 lint/survey_dsl_lint.py my-survey.yml
 ```
 
-For an AI assistant: load `SURVEY-DSL-AUTHORING.md` as context (or via the shim in
-[`integrations/`](integrations/) for your host), author the survey, then run the
-linter before declaring the task done (§0.2 of the reference).
+### Use it with an AI assistant
 
-**Using Claude?** The easiest path is the bundled **Claude Skill** — add it to your Claude
-once and it activates automatically every time you ask for a survey. See
-[`integrations/claude-skill.md`](integrations/claude-skill.md). For ChatGPT, see
-[`integrations/chatgpt-custom-gpt.md`](integrations/chatgpt-custom-gpt.md); for Gemini, see
-[`integrations/gemini-gem.md`](integrations/gemini-gem.md).
+Ready-to-use, **self-contained bundles** for the assistants we've tested live in
+[`bundles/`](bundles/) — each holds the reference, the examples, the linter, and a clear
+per-assistant guide (grab just the one folder you need):
+
+- **Claude** — a drop-in Skill: add it once, it activates automatically → [`bundles/claude/HOW-TO.md`](bundles/claude/HOW-TO.md)
+- **ChatGPT** — a custom GPT → [`bundles/chatgpt/HOW-TO.md`](bundles/chatgpt/HOW-TO.md)
+- **Gemini** — a Gem → [`bundles/gemini/HOW-TO.md`](bundles/gemini/HOW-TO.md)
+
+> **⚠️ Use a flagship model.** These assistants only produce reliable surveys on their
+> strongest tier (GPT-5-class, Claude Opus/Sonnet at high effort, Gemini **Pro** — not
+> Flash/mini). A fast tier passes the linter but *silently drops logic* (quota checks,
+> validations). See **Tested with** below, and always import to a Fieldbase test project
+> before fielding.
+
+For an IDE (Cursor / Copilot / Continue) or a Claude Code project, the shims in
+[`integrations/`](integrations/) (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`) point the tool
+at the reference.
+
+## Tested with
+
+All on the identical brief (a 36-question multi-market tracker), checked against the
+platform's real validator. A clean validator result proves **syntax, not logic** — always
+import to a Fieldbase test project.
+
+| Assistant (model) | Validator | Result |
+|---|---|---|
+| **Claude** (Opus 5, high) | 0 errors | Complete and thorough — cleanest output. |
+| **ChatGPT** (GPT-5.6 Sol) | 0 errors | Complete; a few cosmetic duplicate-helper warnings. |
+| **Gemini** (3.1 Pro) | 0 errors | Complete, but the weakest of the three: left one empty quota `- script:` block and used a single generic error message instead of a pipeable error bank — review those. |
+| Gemini (Flash) — *not recommended* | 0 errors | **Passed validation but dropped logic**: no quota checks, no validations, a required question a respondent couldn't answer. Use Pro instead. |
+
+The takeaway: the differentiator is **model tier, not vendor** — use the flagship tier.
 
 ## What the linter is — and isn't
 
@@ -71,9 +96,11 @@ SURVEY-DSL-AUTHORING.md   the authoring reference (knowledge pack)
 lint/survey-dsl-lint.js   the standalone style/structure linter (Node)
 lint/survey_dsl_lint.py   byte-for-byte Python port (for Python/Code-Interpreter use)
 examples/                 validator-clean example surveys (synthetic)
-integrations/             per-host shims + a drop-in Claude Skill (claude-skill/)
-                          and setup guides (claude-skill.md, chatgpt-custom-gpt.md)
-HANDOFF.md                what was done, provenance, linter calibration, findings
+bundles/<ai>/             self-contained per-assistant bundles (chatgpt, claude, gemini):
+                          reference + examples + linter + a per-assistant HOW-TO
+integrations/             IDE/editor shims (CLAUDE.md, AGENTS.md, .cursorrules)
+scripts/build-bundles.sh  regenerate the bundles from the canonical files
+HANDOFF.md                internal notes (not for distribution)
 LICENSE                   MIT
 ```
 

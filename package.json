@@ -11,13 +11,15 @@
     "lint": "node lint/survey-dsl-lint.js",
     "lint:examples": "node lint/survey-dsl-lint.js examples/*.yml",
     "lint:py": "python3 lint/survey_dsl_lint.py",
-    "build:skill": "bash scripts/build-claude-skill.sh"
+    "build:bundles": "bash scripts/build-bundles.sh"
   },
   "files": [
     "SURVEY-DSL-AUTHORING.md",
     "lint/",
     "examples/",
+    "bundles/",
     "integrations/",
+    "scripts/",
     "LICENSE",
     "README.md",
     "CONTRIBUTING.md"

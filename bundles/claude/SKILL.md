@@ -17,8 +17,7 @@ into a valid Fieldbase Survey DSL `.yml` file, end to end, in one pass.
 2. The bundled `examples/*.yml` are validator-clean worked surveys — copy their shape.
 3. Author **one complete `.yml`** in a single best-effort pass; don't stop to ask. When
    something is ambiguous, make the most reasonable choice per the reference and log EVERY
-   assumption in a `- note: |` delta-log block at the END of the file. That delta-log is the
-   handoff to the human.
+   assumption in a `- note: |` delta-log block at the END of the file.
 4. **Lint before finishing.** If you can run code, run the bundled linter on your output and
    fix every error before returning it:
    ```
@@ -39,6 +38,12 @@ into a valid Fieldbase Survey DSL `.yml` file, end to end, in one pass.
   loop `id:` must be unique. Define each helper function once (don't re-declare it per block).
 - Options are a multi-line block, one code per line — never inline `{1: Yes, 2: No}`.
 - Style names are camelCase (`imageCards`, not `image_cards`). `default.errors` is True/False.
+- Route respondent-facing validation copy through a hidden multi + a reusable error-message
+  list (the `QErrMsg` pattern, §5.6), so every `fail()` reads a pipeable label from one
+  place — not a single generic string.
+- Never leave an empty `- script:` block (comments only). If a quota gate or logic belongs
+  somewhere, write it; if the platform's Quota Builder enforces it instead, omit the block
+  and flag the handoff in the delta-log.
 - Research modules (cbc / maxdiff / cardSort / textAnnotation / imageAnnotation /
   videoAnnotation) are wizard-configured; quota cells, list-asset uploads, and custom
   HTML/CSS/JS modules are human tasks. Emit a stub `- qid:` (type + text) and flag each in
