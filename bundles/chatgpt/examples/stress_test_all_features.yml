@@ -847,8 +847,9 @@
 # -----------------------------------------------------------------------------
 #
 # !HUMAN — Build a quota group named `qtBattery` with 4 cells (codes 1-4)
-# in the Quota Builder before fielding. The script below reads .isOpen and
-# calls .fill() to increment.
+# in the Quota Builder before fielding. The script reads .isOpen/.count and
+# ASSIGNS the least-full cell to a hidden; endSurvey("complete") counts it once
+# (no .fill() — see §15).
 
 - script: |
     # Least-fill assignment: pick an open cell with minimum count.
@@ -870,7 +871,7 @@
                 best = c
                 best_count = cnt
         hQuotaCell.set(best)
-        quota("qtBattery", best).fill()
+        # No .fill() — the assignment is enough; endSurvey("complete") counts the cell once.
 
 - qid: hQuotaCell
     type: single
@@ -1425,8 +1426,9 @@
 
       §14 Stimulus HTML — <b>, <br>, inline formatting in text and labels.
 
-      §15 Quotas — quota("qtBattery", code).isOpen, .count, .fill(),
-        terminate via endSurvey("quotafull").
+      §15 Quotas — quota("qtBattery", code).isOpen/.count, least-fill
+        assignment (no .fill(); endSurvey("complete") counts), terminate
+        via endSurvey("quotafull").
 
       §16 Patterns — least-fill quota assignment (§QUO), multi-country
         hCountry pattern (§H), error-message catalog (QErrMsg), masking

@@ -52,6 +52,8 @@ HARD RULES (full detail in §0 of the reference):
 - Style names are camelCase (imageCards, not image_cards). default.errors is True/False.
 - Route respondent-facing validation copy through a hidden multi + a reusable error-message
   list (a "QErrMsg" pattern), so every fail() reads a pipeable label from one place.
+- Quotas: gate with `quota(...).isOpen` (read-only) and let `endSurvey("complete")` do ALL
+  counting. Never call `quota().fill()` to count completes — it double-counts with complete.
 - Research modules (cbc / maxdiff / cardSort / textAnnotation / imageAnnotation /
   videoAnnotation) are wizard-configured; quota cells, list uploads, and custom HTML/CSS/JS
   are human tasks. Emit a stub `- qid:` (type + text) and flag each in the delta-log — but

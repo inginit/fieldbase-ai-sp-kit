@@ -78,8 +78,7 @@
         cell = hMarket.value
         if not quota("qtMarket", cell).isOpen:
             endSurvey("quotafull")
-        else:
-            quota("qtMarket", cell).fill()
+        # No .fill() here — endSurvey("complete") counts this respondent once.
 
 - qid: S2
     type: single
@@ -158,8 +157,7 @@
         hAgeGenderCell.set(cell)
         if not quota("qtAgeGender", cell).isOpen:
             endSurvey("quotafull")
-        else:
-            quota("qtAgeGender", cell).fill()
+        # No .fill() here — endSurvey("complete") counts this respondent once.
 
 - qid: hAgeGenderCell
     type: single
@@ -252,8 +250,7 @@
     if v is not None:
         if not quota("qtViewer", v).isOpen:
             endSurvey("quotafull")
-        else:
-            quota("qtViewer", v).fill()
+        # No .fill() here — endSurvey("complete") counts this respondent once.
 
 - qid: hViewerType
     type: single

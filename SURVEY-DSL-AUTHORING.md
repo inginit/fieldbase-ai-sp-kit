@@ -2150,6 +2150,22 @@ Custom code is a joint AI-programmer + human-programmer surface:
 
 `quota("groupId", cellCode)` returns a quota-cell proxy.
 
+**Counting model — read this first.** The engine counts each qualified respondent **once,
+automatically**, when they reach `endSurvey("complete")` — it atomically evaluates and fills
+all of that respondent's matching cells. **This is the default and the only path you should
+use to count completes.** In scripts you only ever *read* a cell (`.isOpen` / `.isFull`) to
+gate the flow — you never increment it yourself.
+
+**The canonical quota gate** (test-only; let `complete` do the counting):
+
+```python
+# Screen the respondent against the market quota. READ-ONLY test — no fill here.
+cell = hMarket.value
+if not quota("qtMarket", cell).isOpen:
+    endSurvey("quotafull")
+# The eventual endSurvey("complete") is what increments the cell — exactly once.
+```
+
 **Read accessors** (return a value):
 
 | Accessor | Returns | Meaning |
@@ -2159,21 +2175,22 @@ Custom code is a joint AI-programmer + human-programmer surface:
 | `.target` | `int` | The cell's target (0 = uncapped monitor) |
 | `.remaining` | `int` | `target - count`, clamped at 0 |
 
-**Write method** (write-terminal — returns `None`, never chain or capture):
+**Write method — advanced; do NOT use it to count completes:**
 
 | Method | Behaviour |
 |---|---|
-| `.fill()` | Manual single-cell fill. Increments the cell's count by one, atomically. Used for script-driven fills outside the standard `endSurvey("complete")` path (e.g. quota borrowing, manual adjustments). |
+| `.fill()` | Manually increments one cell by one. **⚠️ Never use this to count completes.** `endSurvey("complete")` already fills every matching cell for a respondent — calling `.fill()` as well **double-counts that respondent**, so the quota closes at a fraction of its target. `.fill()` exists only for genuinely manual cases the auto-path can't express (quota *borrowing*, or counting at a non-complete moment) and is rarely needed. If you are unsure, you don't need it. It is write-terminal (returns `None`) — call on its own line, never capture or chain. |
 
 ```python
-# ✓ Correct — call on its own line.
-quota("qtGenderAge", 4).fill()
+# ✗ NEVER — this respondent is filled here AND again at complete → counted twice.
+quota("qtGenderAge", cell).fill()
+...
+endSurvey("complete")
 
-# ✗ Wrong — .fill() returns None, validator fires `question-write-assign`.
-result = quota("qtGenderAge", 4).fill()
+# ✓ Correct — test only; endSurvey("complete") does the counting.
+if not quota("qtGenderAge", cell).isOpen:
+    endSurvey("quotafull")
 ```
-
-`.fill()` is **distinct from `endSurvey("complete")`** — the latter is the standard auto-fill path that evaluates all matching cells atomically for a respondent's full set of answers. `.fill()` is for one-off, manually-driven cell increments and rarely needed in everyday survey authoring. When in doubt, route the complete through `endSurvey("complete")` and let the engine handle the cells.
 
 Group ids are author-chosen names that match what the human will configure in the Quota Builder. Use a stable convention (e.g. `qt<thing>`) and **document the required group + cell codes in a comment directly above the script**.
 

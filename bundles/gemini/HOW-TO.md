@@ -61,6 +61,8 @@ HARD RULES (full detail in §0 of the reference):
   somewhere, write it: test quota("<group>", cell).isOpen and endSurvey on a closed cell;
   if the quota is enforced by the platform's Quota Builder instead, omit the script entirely
   and flag the human handoff in the delta-log — don't leave an empty block.
+- Quotas count via `endSurvey("complete")` — it fills every matching cell once. Gate with
+  `.isOpen` (read-only); NEVER call `quota().fill()` to count completes (it double-counts).
 - Do not set a required question with no valid "none"/opt-out path when the respondent may
   legitimately have nothing to select (e.g. "which do you pay for?"): either allow it to be
   optional or add an exclusive opt-out option.

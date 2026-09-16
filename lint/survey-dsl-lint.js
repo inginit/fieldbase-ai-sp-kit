@@ -102,6 +102,9 @@ function lintText(text) {
       // continue / break in the Python subset
       if (/^\s+(continue|break)\s*$/.test(raw)) mk(problems, ln, 'error', 'continue-break',
         'continue/break are blocked in the Python subset — invert the predicate instead');
+      // quota().fill() double-counts with endSurvey("complete")
+      if (/\.fill\s*\(/.test(code) && /\bquota\s*\(/.test(code)) mk(problems, ln, 'warn', 'quota-fill-default',
+        'quota().fill() double-counts with endSurvey("complete") — gate with .isOpen and let complete count, unless deliberately borrowing');
     }
 
     // ── everything below is STRUCTURAL — skip inside any scalar body ──

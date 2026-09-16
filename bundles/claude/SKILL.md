@@ -44,6 +44,8 @@ into a valid Fieldbase Survey DSL `.yml` file, end to end, in one pass.
 - Never leave an empty `- script:` block (comments only). If a quota gate or logic belongs
   somewhere, write it; if the platform's Quota Builder enforces it instead, omit the block
   and flag the handoff in the delta-log.
+- Quotas: gate with `quota(...).isOpen` (read-only) and let `endSurvey("complete")` do ALL
+  counting. Never call `quota().fill()` to count completes — it double-counts with complete.
 - Research modules (cbc / maxdiff / cardSort / textAnnotation / imageAnnotation /
   videoAnnotation) are wizard-configured; quota cells, list-asset uploads, and custom
   HTML/CSS/JS modules are human tasks. Emit a stub `- qid:` (type + text) and flag each in
