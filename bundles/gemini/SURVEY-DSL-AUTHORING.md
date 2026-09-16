@@ -18,9 +18,10 @@ platform's own validator and runtime are the authority on what executes — the 
 in this kit is a fast offline pre-check, not a substitute for import/publish on
 Fieldbase (see §0.2).
 
-> **Contract version.** This reference tracks the Fieldbase DSL contract as of engine
-> **v3.34.0**. When Fieldbase adds or tightens rules, the pack and the linter should be
-> updated together (see the note at the end of §0.2).
+> **Kit v0.2.0** · tracks the Fieldbase DSL contract as of engine **v3.34.0**. When
+> Fieldbase adds or tightens rules, the pack and the linter are updated together (see the
+> note at the end of §0.2). If your uploaded copy shows an older version than the repo,
+> re-upload the bundle.
 
 ---
 

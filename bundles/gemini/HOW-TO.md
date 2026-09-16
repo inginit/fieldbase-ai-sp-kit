@@ -3,16 +3,13 @@
 This bundle has everything a Gem needs: the authoring reference, worked examples, and the
 linter. Build the Gem once, reuse it from your Gems list.
 
-> **⚠️ Use Gemini Pro, not Flash — and even then, review the logic.** In our testing the
-> **fast tier (Flash) failed**: it produced DSL that passed validation but dropped the
-> quota logic, the validations, and trapped respondents at a required question. **Pro**
-> (e.g. 3.1 Pro) is much stronger and passes — but it was still the weakest of the three
-> assistants we tested: it left an **empty quota `- script:` block** and used a **single
-> generic error message** instead of the pipeable per-error bank that ChatGPT and Claude
-> produced. So on Gemini, **check two things every time**: (1) no empty `- script:` blocks —
-> either write the quota gate or delete the stub; (2) validation copy is routed through a
-> reusable error-message list (a "QErrMsg" bank), not one generic string. See the test table
-> in the kit README. Always import to a Fieldbase **test** project before fielding.
+> **⚠️ Use Gemini Pro (not a fast/mini tier), and review the logic.** In our testing Pro
+> (e.g. 3.1 Pro) passes but was the weakest of the three assistants: it left an **empty
+> quota `- script:` block** and used a **single generic error message** instead of the
+> pipeable per-error bank that ChatGPT and Claude produced. So on Gemini, **check two things
+> every time**: (1) no empty `- script:` blocks — either write the quota gate or delete the
+> stub; (2) validation copy is routed through a reusable error-message list (a "QErrMsg"
+> bank), not one generic string. Always import to a Fieldbase **test** project before fielding.
 
 ## 1. Create the Gem
 

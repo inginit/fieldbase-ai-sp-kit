@@ -71,9 +71,9 @@ import to a Fieldbase test project.
 | **Claude** (Opus 5, high) | 0 errors | Complete and thorough — cleanest output. |
 | **ChatGPT** (GPT-5.6 Sol) | 0 errors | Complete; a few cosmetic duplicate-helper warnings. |
 | **Gemini** (3.1 Pro) | 0 errors | Complete, but the weakest of the three: left one empty quota `- script:` block and used a single generic error message instead of a pipeable error bank — review those. |
-| Gemini (Flash) — *not recommended* | 0 errors | **Passed validation but dropped logic**: no quota checks, no validations, a required question a respondent couldn't answer. Use Pro instead. |
 
-The takeaway: the differentiator is **model tier, not vendor** — use the flagship tier.
+Use each assistant's **flagship / high-reasoning tier** (not a fast/mini tier) — the
+weaker tiers pass the linter but silently drop logic (quota checks, validations).
 
 ## What the linter is — and isn't
 

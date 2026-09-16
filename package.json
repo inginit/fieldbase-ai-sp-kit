@@ -1,6 +1,6 @@
 {
   "name": "fieldbase-ai-sp-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Model-agnostic authoring reference + standalone style linter for Fieldbase Survey DSL (AI survey-programmer kit).",
   "license": "MIT",
   "homepage": "https://thefieldbase.com",
@@ -26,7 +26,8 @@
     "scripts/",
     "LICENSE",
     "README.md",
-    "CONTRIBUTING.md"
+    "CONTRIBUTING.md",
+    "CHANGELOG.md"
   ],
   "dependencies": {}
 }
