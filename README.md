@@ -1,7 +1,8 @@
-# Survey DSL Kit
+# Fieldbase AI SP Kit
 
 A **model-agnostic, freely distributable** kit that turns any capable AI (or a
-human) into a competent Survey DSL programmer. It is two things and nothing more:
+human) into a competent **Fieldbase survey programmer (SP)** — authoring surveys in
+Fieldbase's Survey DSL. It is two things and nothing more:
 
 1. **[`SURVEY-DSL-AUTHORING.md`](SURVEY-DSL-AUTHORING.md)** — the complete authoring
    reference (the *knowledge*). Question types, properties, styles, flow blocks,

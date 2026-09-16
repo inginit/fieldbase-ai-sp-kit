@@ -1,9 +1,13 @@
 {
-  "name": "survey-dsl-kit",
+  "name": "fieldbase-ai-sp-kit",
   "version": "0.1.0",
-  "description": "Model-agnostic authoring reference + standalone style linter for Survey DSL.",
+  "description": "Model-agnostic authoring reference + standalone style linter for Fieldbase Survey DSL (AI survey-programmer kit).",
   "license": "MIT",
   "homepage": "https://thefieldbase.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inginit/fieldbase-ai-sp-kit.git"
+  },
   "bin": {
     "survey-dsl-lint": "lint/survey-dsl-lint.js"
   },
