@@ -2,12 +2,12 @@
 # STREAMING WARS 2026 — MULTI-MARKET BRAND TRACKER
 # =============================================================================
 #
-# SOURCE: synthetic programming spec (demo)
+# SOURCE: Streaming_Wars_2026_Programming_Spec_v2.1.docx
 # Markets: US / UK / CA / AU (country picked in-survey at S1, not URL param)
 # Target: n=1,250 completes (see §DELTA quotas)
 # LOI: ~12 minutes
 #
-# Coded per the latest CLAUDE.md (§0.1 checklist, §6.3 direct-children loops
+# Coded per the latest the authoring reference (§0.1 checklist, §6.3 direct-children loops
 # where used, §14b custom-code runtime NOT used, §10 comments inert).
 #
 # !HUMAN — Three quotas required in the Quota Builder:
@@ -72,13 +72,14 @@
         3: Canada
         4: Australia
 
-# Fire the market quota check right after hMarket is set.
+# Fire the market quota check right after hMarket is set. Gate only —
+# the engine auto-fills the cell when the respondent reaches endSurvey("complete")
+# at the end of the survey. (Manual .fill() was removed; it double-counted.)
 - script: |
     if hMarket.value is not None:
         cell = hMarket.value
         if not quota("qtMarket", cell).isOpen:
             endSurvey("quotafull")
-        # No .fill() here — endSurvey("complete") counts this respondent once.
 
 - qid: S2
     type: single
@@ -157,7 +158,7 @@
         hAgeGenderCell.set(cell)
         if not quota("qtAgeGender", cell).isOpen:
             endSurvey("quotafull")
-        # No .fill() here — endSurvey("complete") counts this respondent once.
+        # Engine auto-fills the cell on endSurvey("complete") at survey end.
 
 - qid: hAgeGenderCell
     type: single
@@ -250,7 +251,7 @@
     if v is not None:
         if not quota("qtViewer", v).isOpen:
             endSurvey("quotafull")
-        # No .fill() here — endSurvey("complete") counts this respondent once.
+        # Engine auto-fills the cell on endSurvey("complete") at survey end.
 
 - qid: hViewerType
     type: single
@@ -1073,7 +1074,7 @@
     # redirectUrl("https://panel.example.com/end?rid=" + request.param("rid"))
 
 # =============================================================================
-# REUSABLE LISTS (bottom of file per CLAUDE.md §5.2)
+# REUSABLE LISTS (bottom of file per the authoring reference §5.2)
 # =============================================================================
 
 - lists:
@@ -1108,7 +1109,7 @@
     delta-log:
 
     SOURCE
-      synthetic programming spec (demo)
+      Streaming_Wars_2026_Programming_Spec_v2.1.docx
       Multi-market brand tracker — 4 markets (US/UK/CA/AU), target n=1,250.
       LOI: 12 minutes.
 
@@ -1181,7 +1182,7 @@
         apply)").
       - No <u> underlines used (qnr doesn't underline).
 
-    CONTRACT NOTES (from CLAUDE.md changes)
+    CONTRACT NOTES (from the authoring reference changes)
       - Loops use direct children (§6.3). This survey has no loops so no
         migration needed.
       - Comments are Python-inert (§10). Used freely in scripts.

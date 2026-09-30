@@ -84,6 +84,9 @@ These are the most common style violations across surveys. If an edit touches an
 | `label.prefix:` / `label.suffix:` on an `openList` option entry | Not valid on openList entries. Bake the prefix into the row's `label:` directly, or set affixes at question level (§3.8) |
 | `left.label:` / `right.label:` on a `gridSingle` paired `scale:` entry | Belongs on row option entries, not scale entries. Each ROW carries its own left/right anchor pair (§3.8) |
 | `rows: { options: listName }` (nested) on `gridNumber` | gridNumber rows/cols take inline numeric codes — `rows: { 1: Jan, 2: Feb }`. No nested `options:` shape (§2) |
+| Opt-out coded via `exclusive: True` alone (old pattern) when you want split-render + skip-validation + companion export column | Use `isolate: True` (typically with `exclusive: True`) — see §3.10. `isolate` lifts the option out of the choice pool into an external checkbox toggle, clears+disables inputs on select, skips validation, exports as `<qid>o<code>`. Old pattern still works but doesn't get any of that treatment. |
+| Branching on an opt-out via `Q.selected.any([99])` after upgrading to `isolate: True` | `.selected` **excludes** isolate codes. For simple "did they answer?" gates, `Q.answered` returns True whether the respondent gave a real answer or picked the opt-out — that's usually all you need. Migrate any legacy `.selected.any([<optOutCode>])` branches when you convert an opt-out to `isolate: True`. Only reach for a dedicated opt-out accessor when a downstream flow needs to distinguish "answered normally" from "opted out" — and check the current runtime API for the name |
+| `quota(group, code).fill()` in a script (used to be the manual single-cell increment) | Removed. The engine auto-fills cells on `endSurvey("complete")`. Author scripts should only READ from `quota(...)` (`.isOpen`, `.count`, `.target`, `.remaining`) and terminate with `endSurvey("quotafull")` when the target cell is full. See §15 |
 
 If an edit touches any of these surfaces, run the lint workflow in §0.2 **before** declaring the task done.
 
@@ -617,6 +620,101 @@ Semantics: `fixed` = authored order. `random` = stable random for the visible do
 | `label.prefix` / `label.suffix` | Per-row affixes on `numberList` row entries. **Not valid on `openList` option entries** — the validator rejects it. Affixes on `openList` are question-level only (or bake the prefix into the row's `label:`). |
 | `input.size` / `input.maxChar` / `input.min_char` | Per-row input overrides. |
 | `left.label` / `right.label` | `gridSingle` paired-style anchors. **Live on row option entries**, not on scale entries — the validator rejects them on scale entries. Each row entry declares its own left/right anchor pair, the scale entries are just the four (or N) intensity buckets between them. |
+| `isolate` | `True` — mark this entry as an **opt-out** ("Prefer not to answer" / "None of the above" / "N/A"). Renders as a **checkbox toggle outside the question body**. Checking it clears + disables the question's inputs, skips validation, and counts as answered. See §3.10 for the full contract. Typically paired with `exclusive: True` (server-enforced clear). Live contract accepts on: `multi` options, `rank` options, `openList` / `numberList` row overrides, `gridSingle` / `gridMulti` rows, `gridNumber` rows AND cols, and the scalar-only `options:` block on `number` / `open` / `lookup`. **Not (yet) valid on `single` options** — for a `single` opt-out use a plain `anchor: True` option; validator fires `invalid-entry-prop` on `isolate` in a `single`. |
+
+### 3.10 Opt-out entries — `isolate: True`
+
+The canonical "this doesn't apply / Prefer not to answer / None of the above" opt-out. Prefer `isolate: True` for new opt-outs; the old "anchored + `exclusive: True` inside the main options" pattern still works on `multi` but doesn't get the split-render, skip-validation, or companion-column treatment.
+
+**Author syntax — types with an `options:` choice / row list** — add the entry in place. Live contract accepts `isolate:` on: `multi`, `rank`, `openList` (row overrides), `numberList` (row overrides), `gridSingle` rows, `gridMulti` rows.
+
+```yaml
+- qid: QAreas
+    type: multi
+    text: Which areas of the lab do you work in?
+    options:
+        1: Clinical microbiology
+        2: Clinical chemistry
+        3: Hematology
+        99:
+            label: Prefer not to answer
+            isolate: True
+            exclusive: True     # server-enforced clear-others
+```
+
+**`single`**: not yet supported for `isolate:`. Use a plain `anchor: True` option for opt-outs on `single`:
+
+```yaml
+- qid: QBrand
+    type: single
+    options:
+        1: Brand A
+        2: Brand B
+        99:
+            label: Prefer not to answer
+            anchor: True        # NOT isolate: True — validator rejects it on single
+```
+
+**Scalar / no-list types** (`number`, `open`, `lookup`): introduce an isolate-only `options:` block alongside the scalar constraints.
+
+```yaml
+- qid: QAge
+    type: number
+    text: What is your age?
+    min: 1
+    max: 99
+    options:
+        99:
+            label: Prefer not to answer
+            isolate: True
+            exclusive: True
+```
+
+**gridNumber** (only type with symmetric axes): the opt-out lives in `rows:` or `cols:` as an axis entry.
+
+```yaml
+- qid: QBudget
+    type: gridNumber
+    rows:
+        1: Housing
+        2: Food
+        98:
+            label: N/A
+            isolate: True
+            valued: False
+    cols:
+        1: Jan
+        2: Feb
+```
+
+**Multiple opt-outs** are allowed — e.g. `98: Not applicable` + `99: Prefer not to answer`. They render stacked and are mutually exclusive to each other.
+
+**What activating the toggle does:**
+
+1. Clears the axis's answer (row inputs / cells / selection / scalar value).
+2. Disables those inputs while the toggle is checked; unchecking re-enables them.
+3. Skips validation for that question — `required`, `min` / `max`, `atleast`, `exact`, `sum`, required-rows are all bypassed. The opt-out counts as answered.
+4. Mutually exclusive with a real answer and with other opt-out entries.
+5. Enforced both client-side (immediate UX) and server-side (authoritative; a direct API submit can't store both).
+
+**Runtime accessors — isolate-aware:**
+
+| Expression | Behaviour |
+|---|---|
+| `Q.selected` | **Excludes** isolate codes — the isolate is not a selection, it's a separate signal. Standardized across all types. |
+| `Q.answered` | **True whether the respondent answered normally OR picked the opt-out.** This is the recommended way to gate "did they respond at all?" — no separate opt-out accessor needed for typical logic. |
+| `Q.all` | **Excludes** isolate options from the returned domain — so `options.from: OtherQ.all` never drags an opt-out code along. |
+| `options.from` masking | Isolate options are **pinned past `options.from`** — an isolate entry survives regardless of whether the mask expression returns its code (analogous to `anchor: True` pinning position, but here pinning membership). |
+
+**Export column:** the opt-out selection is written to a companion column named `<qid>o<code>` (no underscore) — e.g. `S1o99 = 1`. The question's normal columns go null when opted out.
+
+**When to use `isolate: True` vs `exclusive: True` alone:**
+
+| Situation | Pattern |
+|---|---|
+| A dedicated "Prefer not to answer" / "None of the above" that should live outside the choice list, skip validation, and export as a separate column | `isolate: True` (+ usually `exclusive: True`) |
+| A regular `multi` option that only clears siblings when clicked (e.g. "None of these" that's still a normal option semantically, no split-render needed) | `exclusive: True` alone on the multi option, no isolate |
+| A `single`-question anchor for "Prefer not to answer" without opt-out semantics | Plain `anchor: True` option — `exclusive:` is invalid on `single` |
 
 ### 3.9 Group-level properties
 
@@ -1760,6 +1858,9 @@ elif isNumeric(QAge.value) and toNumeric(QAge.value) < 18:
 - **`.all` always returns the full authored domain** regardless of any active mask.
 - **Loop `.at` is a positional 1-based index**, not a collection method.
 - **CBC per-task accessors are numeric, 1-based columns everywhere.** Write `QCbc.task(1).ratings(1)` — the rating for the concept in column 1 (= "A"). The bracket/letter form `QCbc.task(1).ratings["A"]` is a **silent no-op in live surveys** (it compiled to `unparsed` on the published path and only ever worked in editor preview). Never author it.
+- **`.selected` excludes `isolate: True` codes across every type.** The old pattern of writing `Q.selected.any([99])` to detect a "Prefer not to answer" opt-out now returns False even when the respondent selected it. For most survey logic **use `Q.answered` instead** — it returns True whether the respondent gave a real answer or picked the opt-out, which is what you usually want for skip logic and required gates. A dedicated opt-out accessor was specced (`Q.optedOut` / `Q.isolated`) but is **not required** for typical authoring — reach for it only if a downstream branch genuinely needs to distinguish "answered normally" from "opted out", and check the current runtime API for the shipped name.
+- **`.answered` returns True when only the opt-out is selected.** So a `required: True` question with an `isolate: True` opt-out is satisfied by checking the opt-out — no separate handling needed.
+- **`.all` excludes `isolate: True` options from the returned domain.** So `options.from: QAreas.all.minus([3])` on a downstream question won't include the opt-out code even if the source question has one. This is intentional — masks don't propagate opt-outs.
 - **Lookup `.matched` vs `.answered`:** `matchOnly` lookups have `.answered = True` after any text — always check `.matched` for screenouts.
 - **Cross-iteration access uses `Qx_` (trailing underscore) accessor, not bare brackets.** Static: `QRating_1.value`. Dynamic: `QRating_[c].value`. Nested: `QRating_[b][a].value`. The dynamic-name form `q("baseName", code)` resolves a qid by string. Without these, references inside a loop body resolve to the current iteration; outside the loop, you must qualify with one of these forms.
 
@@ -1811,20 +1912,20 @@ return set(currently_used()).add([97, 98])   # ✓ canonical multi-add idiom (§
 | Receiver | Write-terminal methods |
 |---|---|
 | Any question proxy — bare qid (`Q1`), `q(...)`, row accessor (`Q.row(c)`) | `.set(payload)`, `.reset()` |
-| `quota(group, code)` | `.fill()` (manual single-cell fill — see §15) |
+| `quota(group, code)` | **Read-only from scripts.** `.isOpen`, `.count`, `.target`, `.remaining` — no write method. The engine auto-fills cells on `endSurvey("complete")`. `.fill()` was removed (double-counted with the auto-fill path). See §15. |
 
 These mutate state and discard the return value:
 
 ```python
 Q1.set(2)                          # ✓ correct — on its own line
 Q1.reset()                         # ✓ correct
-quota("qtgender", 1).fill()        # ✓ correct
 
 x = Q1.set(2)                      # ✗ wrong — x is None, validator fires
 y = Q1.reset()                     # ✗ wrong — y is None
-z = quota("c", 1).fill()           # ✗ wrong — z is None
 chain = Q1.set(2).reset()          # ✗ wrong — chain fails on the second call
 ```
+
+`quota(...)` has no write method — the engine handles cell increments on `endSurvey("complete")`. See §15.
 
 **Why the same name `.set()` is fluent on dict and write-terminal on a question:** receiver matters. `someDict.set("k", "v")` returns the dict (fluent — capture if you want). `Q1.set(2)` returns `None` (write-terminal — don't capture). The validator is receiver-aware and tells them apart by knowing the qid registry.
 
@@ -1832,7 +1933,7 @@ chain = Q1.set(2).reset()          # ✗ wrong — chain fails on the second cal
 
 | Diagnostic code | Fires when |
 |---|---|
-| `question-write-assign` | The result of `.set()` / `.reset()` on a known qid (or `q(...)` proxy, or `Q.row(c)` accessor) is assigned to a variable. Also fires for `.fill()` on a `quota(...)` call. |
+| `question-write-assign` | The result of `.set()` / `.reset()` on a known qid (or `q(...)` proxy, or `Q.row(c)` accessor) is assigned to a variable. |
 | `none-returning-method-assign` | A method known to return `None` regardless of receiver is assigned. Currently empty — the receiver-aware check above handles all known write-terminal cases. |
 
 **False positives explicitly avoided** — the validator does NOT fire on:
@@ -1949,7 +2050,7 @@ if (Platform.row(2).value or 0) > 0:
 
 ## 12. `.set(...)` and other write-terminal mutators on question proxies
 
-**`.set(...)`, `.reset()` on any question proxy, and `.fill()` on `quota(...)`, always return `None`.** They are **write-terminal** — they mutate state and discard the return value. The full fluent-vs-write-terminal taxonomy lives in §11; this section is the per-type payload contract.
+**`.set(...)` and `.reset()` on any question proxy always return `None`.** They are **write-terminal** — they mutate state and discard the return value. The full fluent-vs-write-terminal taxonomy lives in §11; this section is the per-type payload contract. (`quota(...)` no longer has a write method — see §15 for the deprecation note on `.fill()`.)
 
 ```python
 Q1.set(2)            # ✓ correct — call on its own line
@@ -2176,21 +2277,18 @@ if not quota("qtMarket", cell).isOpen:
 | `.target` | `int` | The cell's target (0 = uncapped monitor) |
 | `.remaining` | `int` | `target - count`, clamped at 0 |
 
-**Write method — advanced; do NOT use it to count completes:**
+**No manual write method.** `quota(...)` exposes reads only — `.isOpen`, `.count`, `.target`, `.remaining`. There is **no `.fill()`**. The engine handles cell increments automatically when the respondent completes the survey via `endSurvey("complete")`.
 
-| Method | Behaviour |
-|---|---|
-| `.fill()` | Manually increments one cell by one. **⚠️ Never use this to count completes.** `endSurvey("complete")` already fills every matching cell for a respondent — calling `.fill()` as well **double-counts that respondent**, so the quota closes at a fraction of its target. `.fill()` exists only for genuinely manual cases the auto-path can't express (quota *borrowing*, or counting at a non-complete moment) and is rarely needed. If you are unsure, you don't need it. It is write-terminal (returns `None`) — call on its own line, never capture or chain. |
+> **⚠ Deprecated:** earlier versions of this reference showed `quota(group, code).fill()` as a manual single-cell fill. **Do not author it.** The method double-counts against cells that the auto-fill path also increments (reserves ahead), which corrupts the target-vs-actual math. It has been removed from the engine surface. The only correct write path is `endSurvey("complete")`, which evaluates all matching cells atomically for the respondent's full answer set.
 
 ```python
-# ✗ NEVER — this respondent is filled here AND again at complete → counted twice.
-quota("qtGenderAge", cell).fill()
-...
-endSurvey("complete")
-
-# ✓ Correct — test only; endSurvey("complete") does the counting.
+# ✓ Correct — gate on the cell's state, then route the complete.
 if not quota("qtGenderAge", cell).isOpen:
     endSurvey("quotafull")
+# ... normal survey continues; a later endSurvey("complete") increments the cell.
+
+# ✗ Do not author — .fill() has been removed.
+# quota("qtGenderAge", 4).fill()
 ```
 
 Group ids are author-chosen names that match what the human will configure in the Quota Builder. Use a stable convention (e.g. `qt<thing>`) and **document the required group + cell codes in a comment directly above the script**.
@@ -3069,7 +3167,8 @@ Related shortcuts in the same vector-thinking family:
 49. ❌ Long boolean disjunctions across many rows / accessors. `Q.row(1).x.any([3]) or Q.row(2).x.any([3]) or ... or Q.row(7).x.any([3])` should be a helper function looping `Q.all` (§11). Adding a row later will silently bypass the gate otherwise.
 50. ❌ Inline `if:` on every member of a multi-question gated section. When 2+ consecutive questions share a gate, wrap them in a `- if <expr>:` flow block (§6.4) — one gate, one place to change, easier to audit. Inline `if:` is for one-offs or when the gate differs per question.
 51. ❌ Programming separate qids per country (`S6US`, `S6AU`, `S6BR`, `S6ID`, or `S7US`/`S7AU`/`S7ID`) when the qnr shows market-specific labels in a table but the **code count is compatible**. **One qid, one set of codes** — the translator module fills per-language / per-market labels in its own pane. The mockup at `surveyDsl/mockup/translations.html` shows the per-question container pattern. Only create per-country qids when (a) the qnr literally names them separately, (b) the **code scales** differ structurally (e.g., S7 with 8 codes vs S8 with 10 codes — different code spaces), or (c) stakeholders explicitly want per-country columns and confirm codes aren't comparable across markets.
-52. ❌ Capturing the return value of a **write-terminal** mutator. `Q1.set(...)`, `Q1.reset()`, `Q1.row(c).set(...)`, `q("Q1").set(...)`, and `quota(group, code).fill()` always return `None` (§11 / §12). Assigning the result (`x = Q1.set(2)`) makes `x` None and the validator fires `question-write-assign`. Call write-terminal mutators on their own line. Distinguish from **fluent** collection / set / list / dict mutators (`.add`, `.remove`, `.intersect`, `.union`, `.minus`, `.append`, `.extend`, `.sort`, `.clear`, dict `.set(k, v)`) which DO return the modified object and are safe to chain or capture.
+52. ❌ Capturing the return value of a **write-terminal** mutator. `Q1.set(...)`, `Q1.reset()`, `Q1.row(c).set(...)`, `q("Q1").set(...)` always return `None` (§11 / §12). Assigning the result (`x = Q1.set(2)`) makes `x` None and the validator fires `question-write-assign`. Call write-terminal mutators on their own line. Distinguish from **fluent** collection / set / list / dict mutators (`.add`, `.remove`, `.intersect`, `.union`, `.minus`, `.append`, `.extend`, `.sort`, `.clear`, dict `.set(k, v)`) which DO return the modified object and are safe to chain or capture.
+    - **Note:** `quota(group, code).fill()` was previously listed here as a write-terminal mutator; the method itself has been removed from the engine (double-counted with the auto-fill path on `endSurvey("complete")`). See §15.
 53. ❌ Chaining `.set()` on a question proxy. `Q1.set(2).reset()` won't work — the first call returns `None`, so the second call errors. Use separate lines for each write. Chaining is only valid on fluent receivers (collections / sets / lists / dicts).
 54. ❌ Dropping `.selected` from a membership test. The accessor is `Q.selected.any([codes])` on **both single and multi** — there is no `Q.any(...)` form. Per `the bundled single-type example` line 145–146: `Q.selected.any(N)` and `Q.selected.any([1, 2])` are the canonical reads. On `single`, `Q.value == N` is also valid for one code, but for two-or-more codes prefer `Q.selected.any([N1, N2])` over a chain of `or`s (easier to extend, easier to scan). Worked example: `QH.selected.any([1, 2])` ✓ — not `QH.any([1, 2])`. **Cross-check chat shorthand against this authoring reference / the bundled examples before applying** — chat examples are easy to misread, the doc is the source of truth.
 55. ❌ Forgetting that lists (`- lists: foo:`) are static authoring constructs, not runtime objects. `.all` works on **questions and loops**, not on shared lists. To enumerate codes a list defines, iterate from a question that uses the list (`for code in Q7.all:` not `for code in proteinList.all:`). Bonus: `Q.all` honors `options.from` masking — it reflects what the respondent saw, not the static authoring list.

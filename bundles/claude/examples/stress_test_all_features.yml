@@ -4,7 +4,7 @@
 #
 # Synthetic survey designed to exercise the entire authoring surface in one
 # document. Every canonical question type is represented at least once. Every
-# style (per §4 of CLAUDE.md) is rendered at least once. All major properties
+# style (per §4 of the authoring reference) is rendered at least once. All major properties
 # fire. The most error-prone surfaces (loops, mixGrid, lookup variants,
 # annotations, scripts, validation, quotas, piping, multi-country) get a
 # section each.
@@ -26,13 +26,13 @@
 #   §G   Grids — gridSingle (grid + paired), gridMulti, gridNumber
 #   §X   mixGrid — every supported child column type
 #   §LU  Lookup — searchInput / dropdown / cascading / multi / matchOnly
-#   §A   Annotations (research modules — stubs per CLAUDE.md §2)
+#   §A   Annotations (research modules — stubs per the authoring reference §2)
 #   §F   Flow — page, block, loop (with cross-iteration access), if/elif, script, note
 #   §V   Validation — `fail()` patterns piped from QErrMsg
 #   §QUO Quotas — least-fill assignment, fill(), reads
 #   §P   Piping  — every common pipe expression
 #   §END Close-out
-#   §L   Reusable lists (at the bottom per CLAUDE.md §5.2)
+#   §L   Reusable lists (at the bottom per the authoring reference §5.2)
 #   §DELTA delta-log
 #
 # =============================================================================
@@ -42,7 +42,7 @@
 # -----------------------------------------------------------------------------
 
 # Multi-country pattern — punch hCountry from request.param at the top.
-# Per CLAUDE.md §"Multi-country authoring": every country gate reads from
+# Per the authoring reference §"Multi-country authoring": every country gate reads from
 # hCountry.value, never from request.param("lang") directly.
 - script: |
     lang = request.param("lang")
@@ -534,7 +534,7 @@
 # §X — MIXGRID (every supported child type)
 # -----------------------------------------------------------------------------
 #
-# Per CLAUDE.md §8: child columns can be `single`, `multi`, `rank`, `openList`,
+# Per the authoring reference §8: child columns can be `single`, `multi`, `rank`, `openList`,
 # `numberList`, `gridSingle`. Children CANNOT re-declare options/options.from/
 # group/order — the row domain comes from the parent only. The per-column
 # answer domain comes from the column's own type (number = numeric input;
@@ -559,7 +559,7 @@
             scale: satScale5
 
 # -----------------------------------------------------------------------------
-# §LU — LOOKUP (4 variants per §7 of CLAUDE.md)
+# §LU — LOOKUP (4 variants per §7 of the authoring reference)
 # -----------------------------------------------------------------------------
 
 # Single-step searchInput (default style).
@@ -610,10 +610,10 @@
     style: searchInput
 
 # -----------------------------------------------------------------------------
-# §A — ANNOTATIONS (research-module types — stubs per CLAUDE.md §2)
+# §A — ANNOTATIONS (research-module types — stubs per the authoring reference §2)
 # -----------------------------------------------------------------------------
 #
-# Per CLAUDE.md §2: `imageAnnotation`, `videoAnnotation`, `textAnnotation`,
+# Per the authoring reference §2: `imageAnnotation`, `videoAnnotation`, `textAnnotation`,
 # `cbc`, `maxdiff`, `cardSort` are research modules. DSL stubs only; the
 # human programmer configures them via the platform wizard. Flag in
 # delta-log.
@@ -697,7 +697,7 @@
                     specify: True
 
 # Helper script defined BEFORE the loop that uses it. options.from must be
-# a helper call, not inline code (per CLAUDE.md §0.1).
+# a helper call, not inline code (per the authoring reference §0.1).
 - script: |
     def conceptCodes():
         # Drive the loop over the codes the respondent picked at QMulCards.
@@ -746,7 +746,7 @@
     options: brandsLong
 
 # if-flow block: conditional gate wrapping multiple questions (preferred over
-# inline `if:` on each per CLAUDE.md mistake #50).
+# inline `if:` on each per the authoring reference mistake #50).
 - if hCountry.value == 1:
     - qid: QUSPhone
         type: open
@@ -847,9 +847,9 @@
 # -----------------------------------------------------------------------------
 #
 # !HUMAN — Build a quota group named `qtBattery` with 4 cells (codes 1-4)
-# in the Quota Builder before fielding. The script reads .isOpen/.count and
-# ASSIGNS the least-full cell to a hidden; endSurvey("complete") counts it once
-# (no .fill() — see §15).
+# in the Quota Builder before fielding. The script below reads .isOpen and
+# .count for the least-fill decision. The engine auto-fills the cell on
+# endSurvey("complete") at the end of the survey — no manual .fill().
 
 - script: |
     # Least-fill assignment: pick an open cell with minimum count.
@@ -871,7 +871,7 @@
                 best = c
                 best_count = cnt
         hQuotaCell.set(best)
-        # No .fill() — the assignment is enough; endSurvey("complete") counts the cell once.
+        # Engine auto-fills the cell on endSurvey("complete"). No manual .fill().
 
 - qid: hQuotaCell
     type: single
@@ -932,7 +932,7 @@
 # §SKIN — MISSING-SKIN COVERAGE (copy-out block)
 # =============================================================================
 #
-# Added per the skin-matrix audit. Each block exercises one
+# Added per the platform skin-matrix audit. Each block exercises one
 # (type × style) combination that wasn't already covered in the inline
 # sections above. Copy-paste this section into a fresh test survey for
 # skin-by-skin preview / QA.
@@ -950,7 +950,7 @@
 #
 # !HUMAN — the current syntax validator does NOT exhaustively enforce per-type
 # style enums (a typo like `cardStak` passes silently). Confirm each skin
-# renders correctly in preview before fielding. Per §0.3 of the authoring reference.
+# renders correctly in the platform preview before fielding. Per §0.3.
 # -----------------------------------------------------------------------------
 
 # single: imageCards is now covered by the inline `QSinImageCards` question
@@ -1222,6 +1222,175 @@
         2: Lunch
         3: Dinner
 
+# =============================================================================
+# §ISOLATE — OPT-OUT COVERAGE (isolate: True per the authoring reference §3.10)
+# =============================================================================
+#
+# Added per the v3.36–v3.37 rollout of `isolate: True` across every type
+# except cardSort. Each block exercises the opt-out entry on one question
+# type. Renders as a checkbox toggle outside the question body, clears +
+# disables inputs when checked, skips validation, satisfies required,
+# exports as <qid>o<code>.
+#
+# Coverage below (10 combos — every isolate-supporting type):
+#   single, multi, rank, openList, numberList, gridSingle, gridMulti,
+#   gridNumber (row + col forms), number, open, lookup
+# -----------------------------------------------------------------------------
+
+# NOTE — `single` does NOT (yet) accept `isolate: True` on its options.
+# For a single opt-out, use a plain `anchor: True` option:
+- qid: QIsolateSingleFallback
+    type: single
+    text: Which brand do you prefer? (single with anchored PNTA)
+    required: True
+    options:
+        1: Brand A
+        2: Brand B
+        3: Brand C
+        99:
+            label: Prefer not to answer
+            anchor: True
+
+- qid: QIsolateMulti
+    type: multi
+    text: Which brands do you use? (multi with opt-out)
+    required: True
+    options:
+        1: Brand A
+        2: Brand B
+        3: Brand C
+        99:
+            label: None of the above
+            isolate: True
+            exclusive: True
+
+- qid: QIsolateRank
+    type: rank
+    text: Rank these brands. (rank with opt-out)
+    required: True
+    options:
+        1: Brand A
+        2: Brand B
+        3: Brand C
+        99:
+            label: Prefer not to answer
+            isolate: True
+            exclusive: True
+
+- qid: QIsolateOpenList
+    type: openList
+    text: Name three brands you like. (openList with opt-out)
+    required: True
+    options:
+        1: First
+        2: Second
+        3: Third
+        99:
+            label: Prefer not to answer
+            isolate: True
+            exclusive: True
+
+- qid: QIsolateNumberList
+    type: numberList
+    text: How many of each type do you own? (numberList with opt-out)
+    required: True
+    min: 0
+    max: 100
+    options:
+        1: Type A
+        2: Type B
+        3: Type C
+        99:
+            label: N/A — I don't own any
+            isolate: True
+            exclusive: True
+
+- qid: QIsolateGridSingle
+    type: gridSingle
+    text: Rate each brand. (gridSingle with per-question opt-out)
+    required: True
+    options:
+        1: Brand A
+        2: Brand B
+        3: Brand C
+        99:
+            label: I don't know any of these brands
+            isolate: True
+            exclusive: True
+    scale:
+        1: Poor
+        2: Fair
+        3: Good
+        4: Excellent
+
+- qid: QIsolateGridMulti
+    type: gridMulti
+    text: For each brand, pick every channel you've used. (gridMulti with opt-out)
+    required: True
+    options:
+        1: Brand A
+        2: Brand B
+        3: Brand C
+        99:
+            label: I don't use any of these
+            isolate: True
+            exclusive: True
+    scale:
+        1: Website
+        2: Store
+        3: App
+
+- qid: QIsolateGridNumber
+    type: gridNumber
+    text: Allocate spend across category × month. (gridNumber with row opt-out)
+    required: True
+    min: 0
+    max: 1000
+    rows:
+        1: Groceries
+        2: Transport
+        98:
+            label: N/A — no other categories
+            isolate: True
+            valued: False
+    cols:
+        1: Jan
+        2: Feb
+        3: Mar
+
+- qid: QIsolateNumber
+    type: number
+    text: What is your age? (scalar number with opt-out)
+    required: True
+    min: 1
+    max: 120
+    options:
+        99:
+            label: Prefer not to answer
+            isolate: True
+            exclusive: True
+
+- qid: QIsolateOpen
+    type: open
+    text: What company do you work for? (scalar open with opt-out)
+    required: True
+    input.size: 40
+    options:
+        99:
+            label: Prefer not to answer
+            isolate: True
+            exclusive: True
+
+# Branching on an isolate opt-out — `.answered` is the right tool.
+# `Q.answered` returns True whether the respondent gave a real answer OR picked
+# the opt-out, which is exactly what you want for skip gates. `.selected`
+# excludes isolate codes, so it can't distinguish "no answer" from "opted out" —
+# use `.answered` for the answered-or-not gate:
+- qid: QIsolateBranchInfo
+    type: info
+    if: QIsolateMulti.answered
+    text: Thanks for responding to the earlier brand-usage question.
+
 # -----------------------------------------------------------------------------
 # §END — CLOSE-OUT
 # -----------------------------------------------------------------------------
@@ -1243,7 +1412,7 @@
     # redirectUrl("https://panel.example.com/end?rid=" + request.param("rid"))
 
 # =============================================================================
-# §L — REUSABLE LISTS (bottom of file per CLAUDE.md §5.2)
+# §L — REUSABLE LISTS (bottom of file per the authoring reference §5.2)
 # =============================================================================
 
 - lists:
@@ -1345,7 +1514,7 @@
       Contract test for the DSL platform. Every canonical type, every style,
       every property at least once. Use as a feature-coverage smoke test.
 
-    COVERAGE — by CLAUDE.md section
+    COVERAGE — by the authoring reference section
       §2 Types — all canonical types instantiated:
         info, single, multi, rank, open, openList, number, numberList,
         gridSingle, gridMulti, gridNumber, mixGrid, lookup, imageAnnotation,
@@ -1426,9 +1595,9 @@
 
       §14 Stimulus HTML — <b>, <br>, inline formatting in text and labels.
 
-      §15 Quotas — quota("qtBattery", code).isOpen/.count, least-fill
-        assignment (no .fill(); endSurvey("complete") counts), terminate
-        via endSurvey("quotafull").
+      §15 Quotas — quota("qtBattery", code).isOpen, .count for the gate;
+        terminate via endSurvey("quotafull"); engine auto-fills on
+        endSurvey("complete") — no manual .fill() (deprecated).
 
       §16 Patterns — least-fill quota assignment (§QUO), multi-country
         hCountry pattern (§H), error-message catalog (QErrMsg), masking
@@ -1461,7 +1630,7 @@
         instrument).
       - Multi-currency formatting (showcase pipes use USD; %.2f in the pipe
         spec).
-      - Derotation pattern (see CLAUDE.md §16.13 for the canonical example).
+      - Derotation pattern (see the authoring reference §16.13 for the canonical example).
       - Softmax classifier (see §16.15).
       - Master brand-list pattern across products (see §16.16) — covered
         elsewhere; not duplicated here.

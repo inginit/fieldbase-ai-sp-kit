@@ -101,8 +101,8 @@ def lint_text(text):
                 mk(ln, "error", "continue-break",
                    "continue/break are blocked in the Python subset — invert the predicate instead")
             if re.search(r"\.fill\s*\(", code) and re.search(r"\bquota\s*\(", code):
-                mk(ln, "warn", "quota-fill-default",
-                   'quota().fill() double-counts with endSurvey("complete") — gate with .isOpen and let complete count, unless deliberately borrowing')
+                mk(ln, "error", "quota-fill-removed",
+                   'quota().fill() has been removed — the engine auto-fills cells on endSurvey("complete"). Read-only from scripts: .isOpen / .count / .target / .remaining; terminate via endSurvey("quotafull") when full')
 
         # everything below is STRUCTURAL — skip inside any scalar body
         if in_scalar:

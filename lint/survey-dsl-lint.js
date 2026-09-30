@@ -102,9 +102,9 @@ function lintText(text) {
       // continue / break in the Python subset
       if (/^\s+(continue|break)\s*$/.test(raw)) mk(problems, ln, 'error', 'continue-break',
         'continue/break are blocked in the Python subset — invert the predicate instead');
-      // quota().fill() double-counts with endSurvey("complete")
-      if (/\.fill\s*\(/.test(code) && /\bquota\s*\(/.test(code)) mk(problems, ln, 'warn', 'quota-fill-default',
-        'quota().fill() double-counts with endSurvey("complete") — gate with .isOpen and let complete count, unless deliberately borrowing');
+      // quota().fill() was removed from the engine (double-counted with the auto-fill path)
+      if (/\.fill\s*\(/.test(code) && /\bquota\s*\(/.test(code)) mk(problems, ln, 'error', 'quota-fill-removed',
+        'quota().fill() has been removed — the engine auto-fills cells on endSurvey("complete"). Read-only from scripts: .isOpen / .count / .target / .remaining; terminate via endSurvey("quotafull") when full');
     }
 
     // ── everything below is STRUCTURAL — skip inside any scalar body ──
