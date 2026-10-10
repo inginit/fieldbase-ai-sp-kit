@@ -86,6 +86,7 @@ These are the most common style violations across surveys. If an edit touches an
 | `rows: { options: listName }` (nested) on `gridNumber` | gridNumber rows/cols take inline numeric codes — `rows: { 1: Jan, 2: Feb }`. No nested `options:` shape (§2) |
 | Opt-out coded via `exclusive: True` alone (old pattern) when you want split-render + skip-validation + companion export column | Use `isolate: True` (typically with `exclusive: True`) — see §3.10. `isolate` lifts the option out of the choice pool into an external checkbox toggle, clears+disables inputs on select, skips validation, exports as `<qid>o<code>`. Old pattern still works but doesn't get any of that treatment. |
 | Branching on an opt-out via `Q.selected.any([99])` after upgrading to `isolate: True` | `.selected` **excludes** isolate codes. For simple "did they answer?" gates, `Q.answered` returns True whether the respondent gave a real answer or picked the opt-out — that's usually all you need. Migrate any legacy `.selected.any([<optOutCode>])` branches when you convert an opt-out to `isolate: True`. Only reach for a dedicated opt-out accessor when a downstream flow needs to distinguish "answered normally" from "opted out" — and check the current runtime API for the name |
+| Re-authoring order mirroring with a shuffle helper or a second `random`-mode question so a loop iterates in the parent's shown order | `order:` + `scale.order:` accept an **expression** (engine v3.38.0+). `options.from: QBrand.selected` + `order: QBrand.all` iterates the loop over picked brands in the order the respondent saw them — no helper, no second random, deterministic parity between editor and respondent. Same shape for `scale.order:` and for `block.order:` imposing a stored `[2,4,1,3]` sequence (§3.6). |
 | `quota(group, code).fill()` in a script (used to be the manual single-cell increment) | Removed. The engine auto-fills cells on `endSurvey("complete")`. Author scripts should only READ from `quota(...)` (`.isOpen`, `.count`, `.target`, `.remaining`) and terminate with `endSurvey("quotafull")` when the target cell is full. See §15 |
 
 If an edit touches any of these surfaces, run the lint workflow in §0.2 **before** declaring the task done.
@@ -590,11 +591,48 @@ Then flag in delta-log: "Configure CBC attributes/levels via the CBC wizard."
 
 | Property | Applies to | Values |
 |---|---|---|
-| `order` | most types, `loop`, `page`, `block` | `fixed` / `random` / `randomEach` / `flip` / `alphabetical` / `reverse` |
-| `group.order` | types with `group` | same |
-| `scale.order` | grids | same |
+| `order` | most types, `loop`, `page`, `block` | keyword — `fixed` / `random` / `randomEach` / `flip` / `alphabetical` / `reverse` — **or an expression** (engine v3.38.0+) |
+| `group.order` | types with `group` | keyword only (expression form deferred) |
+| `scale.order` | grids | same forms as `order:` |
 
-Semantics: `fixed` = authored order. `random` = stable random for the visible domain. `randomEach` = re-rolls per show. `flip` = deterministic split-sample (assigned once per respondent). `reverse` = forced reversed. `alphabetical` = author cautiously.
+Keyword semantics: `fixed` = authored order. `random` = stable random for the visible domain. `randomEach` = re-rolls per show. `flip` = deterministic split-sample (assigned once per respondent). `reverse` = forced reversed. `alphabetical` = author cautiously.
+
+**Expression form (engine v3.38.0).** `order:` and `scale.order:` accept any expression resolving to an ordered code list — the same evaluator `options.from:` already uses. The value is a keyword iff it exactly matches one of the six reserved words above; anything containing expression syntax (`. ( ) [ ] ,`) is parsed as an expression. Forms:
+
+```yaml
+# accessor — shown order of another question
+order: Q1.all
+
+# selections, in shown order
+order: Q1.selected
+
+# method chain (ordered union: Q1 first, then Q2's new ones, deduped)
+order: Q1.all.union(Q2.selected)
+
+# def-function returning a set / list
+order: myOrder()
+
+# literal code list
+order: 4,2,3,1
+
+# captured hidden (hOrder.rows pattern)
+order: hOrder.rows
+```
+
+**Semantics of the expression form:**
+
+- **Sequence only, not membership.** `*.from:` picks which codes appear; `order:` sequences whatever the membership is. When both are present, membership comes from `*.from` and sequence from `order`. When only `order:` is present, it sequences the authored domain.
+- **Anchors + `isolate:` opt-outs excluded** from the orderable set. Anchors stay pinned; isolate codes never participate (and never produce loop iterations).
+- **Dedup** — first occurrence wins; later duplicates ignored.
+- **Unknown codes** — a code in the list that isn't a current member places nothing.
+- **Unlisted members** — a current member not named by the list is appended after, in its current order (authored, or `*.from`'s returned order).
+- **Unresolved dependency** → falls back to authored order (same catch behavior as `options.from:`). Applies once the dependency resolves.
+- **Empty resolve** → unlisted-members rule appends everything in current order (= authored). `order:` never changes membership.
+- **Deterministic** — no RNG; editor-preview and respondent engine produce byte-identical sequences for the same answers.
+
+**Grouped questions.** `group.order:` sequences the groups; `order:` sequences options **within each group** (options can't leave their group — a cross-group code list is matched per group). An `anchor: True` group stays pinned.
+
+**v3.38.0 behavior-change note (random-order consistency).** The respondent render used to carry a DUPLICATE shuffle on top of the engine's one, silently breaking carry-forward (`Q.all` / `Q.selected` and the respondent's displayed order didn't match). The duplicate is removed. For most surveys this is transparent — `random` is still stable per respondent, `randomEach` is still re-rolled per show. The one visible change: a **piped subset** (`options.from: QParent.selected`) now **inherits the parent's shown order** instead of being independently reshuffled. This is research-methodology correct, but a survey that depended on the old independent reshuffle will see displayed order shift (data is unaffected — stored by code).
 
 ### 3.7 Conditions
 
@@ -1018,6 +1056,8 @@ Allowed children: `question`, `page`, `block`, `loop`, `if`/`elif`/`else`. **`sc
             ...
 ```
 
+`block.order:` accepts a keyword OR an **expression** (engine v3.38.0+). The expression resolves to an ordered list of child-block ids, so you can impose a stored sequence (e.g. a captured `hBlockOrder.rows` of `[2, 4, 1, 3]`) on the children — each child block is kept together (its internals keep their defined order) and child blocks are traversed in the resolved sequence. See §3.6 for the full semantics.
+
 ### 6.3 `- loop:` — iterate
 
 **Loops are control-flow (repeated mixed content — questions, scripts, logic), NOT a display group.** Their body is written as **DIRECT children** with no `questions:` wrapper, exactly like `if` / `elif` / `else`. This lets `- script:` live inside a loop for per-iteration logic. The validator emits `loop-questions-not-allowed` if you use `questions:` on a loop.
@@ -1050,7 +1090,7 @@ Properties (direct props):
 | `options:` | Inline coded list — fixed iterations. |
 | `options.from:` | Python expression returning codes (most common — looping over a previous selection). |
 | `group:` | Reusable list name. |
-| `order:` | `fixed` / `random` / `randomEach` / `alphabetical` / `reverse` / `flip`. |
+| `order:` | Keyword (`fixed` / `random` / `randomEach` / `alphabetical` / `reverse` / `flip`) **or an expression** (engine v3.38.0+). The expression form is how you make a follow-up loop iterate in a parent question's shown order — e.g. `options.from: QBrand.selected` + `order: QBrand.all` iterates picked brands in the order they appeared, not in authored/click order. See §3.6. |
 
 Exactly one of `options:` / `options.from:` / `group:`.
 
@@ -3206,6 +3246,7 @@ Related shortcuts in the same vector-thinking family:
 
     Applies to `- lists:`, `- scales:`, `- groups:` blocks. Same rule for any block where a child key follows.
 60. ❌ Modeling "show what you said before next to a new entry" as a single column. When the qnr wants a **pre / post pair** ("What you told us earlier" + "What you think now", or any other before/after reminder layout), use `mixGrid` with two columns — the first `readonly: True` and pre-populated by a script that copies the earlier values, the second editable for the new entry. Column types can be any of the supported child types (`numberList`, `single`, `multi`, `open`, scale, etc.) and don't have to match — pre might be a `single` echoing an earlier choice while post is a `numberList` for new allocations. The general pattern: **readonly echo + editable new entry, paired in one mixGrid**. Single-column rendering loses the side-by-side reminder the design intends.
+61. ❌ Assuming a piped subset of a randomized parent still gets its own independent reshuffle. **Engine v3.38.0 fixed the duplicate-shuffle bug**: the respondent render no longer carries a second shuffle on top of the engine's one. A piped subset (`options.from: QBrand.selected`) now **inherits the parent's shown order** — not an independent reshuffle. This is research-methodology correct and matches `Q.all` / `Q.selected`, but a legacy survey that relied on the broken reshuffle will see its displayed order change (data unaffected — stored by code). If you genuinely need an independent reshuffle on the child, give the child its own `order: random` **and** be aware that stored codes stay the same (§3.6 behavior-change note). Related: for a loop that must iterate in the parent's shown order, use `options.from: QBrand.selected` + `order: QBrand.all` (expression form, §6.3) — no helper required.
 
 ---
 

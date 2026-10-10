@@ -3,6 +3,41 @@
 All notable changes to the Fieldbase AI SP Kit. When the version here is newer than the
 copy you uploaded to an assistant, re-upload that assistant's bundle (`bundles/<ai>/`).
 
+## v0.4.0 — 2026-10-10
+
+Sync to Fieldbase engine v3.38.x line.
+
+- **New: expression form on `order:` + `scale.order:`** (§3.6 + §6.2/§6.3).
+  `order:` now accepts an expression resolving to an ordered code list in
+  addition to the keyword forms (`fixed` / `random` / `randomEach` / `flip` /
+  `alphabetical` / `reverse`). Forms: accessor (`Q1.all`, `Q1.selected`),
+  method chain (`.union()` / `.minus()`), def function call, a literal list
+  (`4,2,3,1`), or a captured hidden (`hOrder.rows`). Membership stays with
+  `*.from:`; `order:` is sequence-only. Anchors + `isolate:` opt-outs are
+  excluded from the orderable set as today. Deterministic — editor-preview
+  and respondent engine produce byte-identical sequences for the same
+  answers. Scope: question option / row domains (single, multi, rank,
+  openList, numberList, gridSingle, gridMulti, gridNumber, mixGrid rows),
+  within-group options, `scale.order:` on grids, `col.order:` (alias of
+  `scale.order:` on gridNumber), **loops** (iterate a source's shown
+  order), and **blocks** (impose a stored sequence on child blocks by id).
+  `group.order` by expression deferred. Keyword vs expression: a value is
+  a keyword iff it exactly matches one of the six reserved words; anything
+  with expression syntax (`. ( ) [ ] ,`) is parsed as an expression.
+- **Random-order consistency fix** — the respondent render used to carry a
+  DUPLICATE shuffle, silently breaking carry-forward (`Q.all` / `Q.selected`
+  and the respondent's displayed order didn't match). The duplicate is
+  removed. One visible change: a **piped subset**
+  (`options.from: QParent.selected`) now **inherits the parent's shown
+  order** instead of being independently reshuffled. Data unaffected
+  (stored by code); a legacy survey that depended on the broken reshuffle
+  will see displayed order shift. New §17 mistake #61 documents the
+  behavior change and the migration path.
+- **New §17 mistake #60** promoting the expression form for order-mirroring
+  (previously accomplished by shuffle helpers or secondary `random`-mode
+  questions — now a one-liner on `order:` / `scale.order:` / `block.order:`).
+- Pack tracks the Fieldbase DSL contract as of engine v3.38.x.
+
 ## v0.3.0 — 2026-09-30
 
 Sync to Fieldbase engine v3.37.x line.
