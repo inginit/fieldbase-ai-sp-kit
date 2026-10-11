@@ -3,6 +3,27 @@
 All notable changes to the Fieldbase AI SP Kit. When the version here is newer than the
 copy you uploaded to an assistant, re-upload that assistant's bundle (`bundles/<ai>/`).
 
+## v0.4.1 — 2026-10-11
+
+Documentation fix on top of v0.4.0 — clarifies the scope of the new
+expression form for `order:` / `scale.order:`.
+
+- **§3.6 bright-line table** — "Where to put `order:` with a piped subset":
+  on a **question** (`multi` / `single` / `rank` / `openList` / `numberList` /
+  grid rows) the piped subset auto-inherits the parent's shown order
+  (engine v3.38.0 fix); adding `order: Q.all` is redundant. On a **loop**
+  or **block**, the expression form IS the explicit switch — keep it.
+  v0.4.0's guidance didn't make this distinction, and the AI SP kit was
+  seen emitting `order: Q.all` on multi-questions where it's dead code.
+- **§0.1 checklist** — original row qualified "on a loop"; new row added:
+  "Adding `order: Q.all` to a question whose `options.from:` already pipes
+  from the parent" → leave it off.
+- **§17 mistake #62** — new entry: redundant question-level `order: Q.all`
+  on a piped subset; the resolver returns the inherited sequence either
+  way, so keep questions clean.
+- No code changes; linters unchanged; engine contract unchanged (still
+  tracks v3.38.x).
+
 ## v0.4.0 — 2026-10-10
 
 Sync to Fieldbase engine v3.38.x line.
