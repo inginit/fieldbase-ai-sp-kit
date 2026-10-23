@@ -530,6 +530,8 @@ Then flag in delta-log: "Configure CBC attributes/levels via the CBC wizard."
 
 **Mask vs. order:** masking decides *which* codes show; **authored order** governs display sequence. `order: random` applies on top of the visible subset. `.all` returns the full authored domain regardless of mask.
 
+**`options.from:` requires a companion `options:` or `group:`.** The mask is a filter on an explicit domain — on its own it declares no response space, so the validator fires `options-from-domain-required`. Pair it: `options: streamingBrands` + `options.from: q2BrandsUsed()` is the canonical shape. Same rule holds on loops (§6.3).
+
 **Masking rule:** when a question uses `options.from:` / `scale.from:`, define the helper function in a `- script:` placed **immediately above** the consuming question, and **gate the question with `if: len(helper()) > 0`** so it's skipped when the mask returns empty. A required question with no options strands the respondent — they can't proceed and can't answer. Skip the question instead. (The `if:` predicate uses the same helper the mask uses, so there's a single source of truth for "should this render at all".)
 
 ```yaml
@@ -1098,12 +1100,18 @@ Properties (direct props):
 | Property | Notes |
 |---|---|
 | `id` | Required. Unique across all loops in the survey. Becomes the **loop variable name**. Duplicate ids fire `duplicate-loop-id` (iterations key by id and exports derive loop columns from it — two loops sharing an id merge their data). |
-| `options:` | Inline coded list — fixed iterations. |
-| `options.from:` | Python expression returning codes (most common — looping over a previous selection). |
-| `group:` | Reusable list name. |
+| `options:` | Inline coded list — the loop's full iteration domain (full-domain disclosure, used for exports and label resolution). |
+| `options.from:` | Runtime mask — Python expression returning the visible subset of codes to iterate over (most common: looping over a previous selection). **Requires a companion `options:` or `group:` on the same loop.** |
+| `group:` | Reusable named grouped list — alternative to `options:` for full-domain disclosure. |
 | `order:` | Keyword (`fixed` / `random` / `randomEach` / `alphabetical` / `reverse` / `flip`) **or an expression** (engine v3.38.0+). The expression form is how you make a follow-up loop iterate in a parent question's shown order — e.g. `options.from: QBrand.selected` + `order: QBrand.all` iterates picked brands in the order they appeared, not in authored/click order. See §3.6. |
 
-Exactly one of `options:` / `options.from:` / `group:`.
+**Required combinations:** `options.from:` is a mask only — it does **not** stand alone. Pair it with a companion `options:` (or `group:`) on the same loop so the full response domain stays explicit (needed by exports + label resolution). Valid forms:
+
+- `options:` alone — fixed iterations, full domain = iteration domain.
+- `options:` + `options.from:` — fixed full domain, runtime-filtered iteration subset.
+- `group:` + `options.from:` — grouped full domain, runtime-filtered iteration subset.
+
+**Invalid:** `options.from:` alone fires `options-from-domain-required` from the validator. This mirrors the identical rule on question-level `options.from:` (§3.2).
 
 **Allowed children (direct, not under `questions:`):** `question`, `page`, `block`, `loop` (nested), `if` / `elif` / `else`, `script`, `custom`, `note`.
 

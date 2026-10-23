@@ -3,6 +3,31 @@
 All notable changes to the Fieldbase AI SP Kit. When the version here is newer than the
 copy you uploaded to an assistant, re-upload that assistant's bundle (`bundles/<ai>/`).
 
+## v0.4.2 — 2026-10-23
+
+Doc fix. The §6.3 loop property section said *"Exactly one of
+`options:` / `options.from:` / `group:`."* — the opposite of what the
+engine enforces. The real validator fires `options-from-domain-required`
+whenever `options.from:` appears without a companion `options:` or
+`group:` to disclose the full response domain. `options.from:` is a
+**mask only** — not a replacement for the domain declaration.
+
+- **§6.3 loop properties** — replaced the incorrect "Exactly one of"
+  sentence with the correct rule and valid-combinations list:
+  - `options:` alone — fixed iterations.
+  - `options:` + `options.from:` — fixed domain + runtime filter.
+  - `group:` + `options.from:` — grouped domain + runtime filter.
+  - `options.from:` alone — INVALID, fires `options-from-domain-required`.
+
+- **§3.2 choices & scale** — added a parity note making the same pairing
+  rule explicit for QUESTIONS (previously the §3.2 "mask" phrasing in
+  §526/§532 implied it, but didn't name the companion requirement).
+
+The kit's own canonical examples (stress_test, streaming_wars) already
+use the correct paired form; this release only fixes the prose. No code
+changes; linters unchanged; engine contract unchanged (still tracks
+v3.38.x).
+
 ## v0.4.1 — 2026-10-11
 
 Documentation fix on top of v0.4.0 — clarifies the scope of the new
