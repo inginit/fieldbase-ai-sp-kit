@@ -2309,15 +2309,29 @@ Custom code is a joint AI-programmer + human-programmer surface:
 
 ### 15.1 The runtime quota accessor
 
-`quota("groupId", cellCode)` returns a quota-cell proxy.
+**Signature:** `quota(groupId, cellCode)` — **strictly two arguments**. There is no single-arg auto-match form; the author always supplies the resolved cell code. An unknown `groupId` or `cellCode` **fails closed** (treated as full, respondent is screened out) so a typo never silently routes someone into an untracked cell.
 
-**Counting model — read this first.** The engine counts each qualified respondent **once,
-automatically**, when they reach `endSurvey("complete")` — it atomically evaluates and fills
-all of that respondent's matching cells. **This is the default and the only path you should
-use to count completes.** In scripts you only ever *read* a cell (`.isOpen` / `.isFull`) to
-gate the flow — you never increment it yourself.
+**Counting model — read this first.** The engine counts each qualified respondent **once, automatically**, when they reach `endSurvey("complete")` — it atomically evaluates and fills all of that respondent's matching cells. **This is the default and the only path you should use to count completes.** In scripts you only ever *read* a cell (`.isOpen` / `.isFull`) to gate the flow — you never increment it yourself.
 
-**The canonical quota gate** (test-only; let `complete` do the counting):
+> **⚠ `endSurvey("complete")` COUNTS the fill. It does not SCREEN.** The auto-fill path only increments cells for respondents who *reach* `endSurvey("complete")`. A capped multi-dimension quota still requires an explicit **read-only gate** earlier in the flow — if you don't gate, over-quota respondents sail through to complete and overfill every cell. There is no "complete handles it" shortcut.
+
+**Read accessors** (return a value):
+
+| Accessor | Returns | Meaning |
+|---|---|---|
+| `.isOpen` | `bool` | `True` when the cell still has fill remaining; `False` when at target |
+| `.isFull` | `bool` | `True` when `.count >= .target` (and `.target > 0`); inverse of `.isOpen` |
+| `.count` | `int` | Current fills against this cell |
+| `.target` | `int` | The cell's target (0 = uncapped monitor) |
+| `.remaining` | `int` | `target - count`, clamped at 0 |
+
+**No manual write method.** `quota(...)` is read-only — no `.fill()`.
+
+> **⚠ Deprecated:** earlier versions of this reference showed `quota(group, code).fill()` as a manual single-cell fill. **Do not author it.** The method double-counts against cells that the auto-fill path also increments (reserves ahead), which corrupts the target-vs-actual math. It has been removed from the engine surface. The only correct write path is `endSurvey("complete")`, which evaluates all matching cells atomically for the respondent's full answer set.
+
+#### Pattern A — single-dimension quota gate (cell code == dimension value)
+
+Simplest case: the respondent's dimension value IS the cell code (e.g. 4 markets numbered 1–4, cell codes 1–4). No derivation needed.
 
 ```python
 # Screen the respondent against the market quota. READ-ONLY test — no fill here.
@@ -2327,42 +2341,90 @@ if not quota("qtMarket", cell).isOpen:
 # The eventual endSurvey("complete") is what increments the cell — exactly once.
 ```
 
-**Read accessors** (return a value):
+#### Pattern B — multi-dimension quota gate (cell code derived from 2+ dimensions)
 
-| Accessor | Returns | Meaning |
-|---|---|---|
-| `.isOpen` | `bool` | `True` when the cell still has fill remaining; `False` when at target |
-| `.count` | `int` | Current fills against this cell |
-| `.target` | `int` | The cell's target (0 = uncapped monitor) |
-| `.remaining` | `int` | `target - count`, clamped at 0 |
+Most real screeners cross two or three dimensions (Age × Gender, Market × Age, Region × Segment). The engine's `quota(group, cellCode)` signature still takes a single `cellCode` — so the author derives it **by explicit mapping**, not by arithmetic, and stores it in a **hidden interlocked cell question** that mirrors the Quota Builder cell codes 1..N.
 
-**No manual write method.** `quota(...)` exposes reads only — `.isOpen`, `.count`, `.target`, `.remaining`. There is **no `.fill()`**. The engine handles cell increments automatically when the respondent completes the survey via `endSurvey("complete")`.
+```yaml
+# Dimension 1: age band (derived from the age question)
+- qid: hAgeGroup
+    type: single
+    visibility: hide
+    title: Age band for qtAgeGender derivation
+    options:
+        1: 18-34
+        2: 35-54
+        3: 55-64
 
-> **⚠ Deprecated:** earlier versions of this reference showed `quota(group, code).fill()` as a manual single-cell fill. **Do not author it.** The method double-counts against cells that the auto-fill path also increments (reserves ahead), which corrupts the target-vs-actual math. It has been removed from the engine surface. The only correct write path is `endSurvey("complete")`, which evaluates all matching cells atomically for the respondent's full answer set.
+- script: |
+    if S2.selected.any([1, 2]):
+        hAgeGroup.set(1)
+    elif S2.selected.any([3, 4]):
+        hAgeGroup.set(2)
+    elif S2.selected.any(5):
+        hAgeGroup.set(3)
 
-```python
-# ✓ Correct — gate on the cell's state, then route the complete.
-if not quota("qtGenderAge", cell).isOpen:
-    endSurvey("quotafull")
-# ... normal survey continues; a later endSurvey("complete") increments the cell.
+# Dimension 2: gender (asked directly as S3)
+#   S3.options: 1 Male / 2 Female / 3 Non-binary / 4 PNTA
 
-# ✗ Do not author — .fill() has been removed.
-# quota("qtGenderAge", 4).fill()
+# Interlocked cell question — one option per Quota Builder cell (1..N).
+# This is a hidden single whose code IS the cell code; `.set(cell)` lands the
+# respondent in that cell for export + analyst visibility.
+- qid: hAgeGenderCell
+    type: single
+    visibility: hide
+    title: Age × Gender interlocked quota cell (1-6)
+    options:
+        1: Male 18-34
+        2: Male 35-54
+        3: Male 55-64
+        4: Female 18-34
+        5: Female 35-54
+        6: Female 55-64
+
+# Derivation + gate.
+# !HUMAN — the qnr defines cells for Male/Female only; Non-binary and PNTA
+# have no cell. Options: (a) continue without a quota check (current), (b)
+# terminate, (c) allocate to a fallback cell. Flag this in the delta-log.
+- script: |
+    ag = hAgeGroup.value
+    g  = S3.value
+    cell = None
+    if   g == 1 and ag == 1: cell = 1  # Male 18-34
+    elif g == 1 and ag == 2: cell = 2  # Male 35-54
+    elif g == 1 and ag == 3: cell = 3  # Male 55-64
+    elif g == 2 and ag == 1: cell = 4  # Female 18-34
+    elif g == 2 and ag == 2: cell = 5  # Female 35-54
+    elif g == 2 and ag == 3: cell = 6  # Female 55-64
+
+    if cell is not None:
+        hAgeGenderCell.set(cell)
+        if not quota("qtAgeGender", cell).isOpen:
+            endSurvey("quotafull")
+    # Unmapped (Non-binary / PNTA): no cell, no gate — they continue per !HUMAN above.
+    # Engine auto-fills the matched cell on endSurvey("complete") later.
 ```
+
+**Why an explicit if/elif chain, not arithmetic.** `cell = (g - 1) * 3 + ag` happens to work for 2 × 3 cells numbered 1–6 in a specific order, but it silently breaks the moment the Quota Builder reorders cells, inserts a new category, or uses non-contiguous codes. The explicit mapping is **the single source of truth** between the DSL and the Builder — the human reads it, confirms it against their cell table, and the AI never guesses an arithmetic encoding that nobody asked for. Flag any divergence between the if-chain and the delta-log'd cell list.
+
+**Why a hidden interlocked cell question (`hAgeGenderCell`).** It gives the analyst a single column that answers "which quota cell did this respondent land in?" — valuable for cross-tabs, cell-balance checks, and debugging over/under-fill. It's also the single place a future flow (recontact, follow-up) can read the cell from without re-running the derivation.
+
+**Three or more dimensions.** Same pattern — nest the if/elif chain or precompute two dimensions into an interlocked helper (e.g. `hRegionAge`) and then combine with the third. The cell count explodes fast; prefer narrower cell tables where the research question allows.
 
 Group ids are author-chosen names that match what the human will configure in the Quota Builder. Use a stable convention (e.g. `qt<thing>`) and **document the required group + cell codes in a comment directly above the script**.
 
 ### 15.2 What the AI programmer authors
 
 1. Make sure questions that feed quota dimensions exist with clean numeric codes (typically demos: `Gender`, `AgeBand`, `Region`).
-2. Author least-fill / priority-fill **assignment scripts** that read open cells from a named quota and punch a hidden helper question (§16.10). Place a `# Prerequisite:` comment above the script naming the required quota group.
-3. Place `endSurvey("complete")` at the end of each qualifying path so the engine evaluates and increments cells:
+2. For every capped quota group that crosses two or more dimensions, author the **derivation + interlocked hidden cell + read-only gate** triple from §15.1 Pattern B. Single-dim quotas use Pattern A directly.
+3. Author least-fill / priority-fill **assignment scripts** that read open cells from a named quota and punch a hidden helper question (§16.10). Place a `# Prerequisite:` comment above the script naming the required quota group.
+4. Place `endSurvey("complete")` at the end of each qualifying path so the engine evaluates and increments cells:
    ```yaml
    - script: |
        # Mark the qualified respondent as a complete — triggers quota cell increment.
        endSurvey("complete")
    ```
-4. In the delta-log, list every quota group the survey expects, with the cell codes and (where known) the targets, so the human can build them in the Builder.
+5. In the delta-log, list every quota group the survey expects, with the cell codes and (where known) the targets, so the human can build them in the Builder.
 
 ### 15.3 What the AI programmer does NOT author
 
@@ -3267,6 +3329,8 @@ Related shortcuts in the same vector-thinking family:
 60. ❌ Modeling "show what you said before next to a new entry" as a single column. When the qnr wants a **pre / post pair** ("What you told us earlier" + "What you think now", or any other before/after reminder layout), use `mixGrid` with two columns — the first `readonly: True` and pre-populated by a script that copies the earlier values, the second editable for the new entry. Column types can be any of the supported child types (`numberList`, `single`, `multi`, `open`, scale, etc.) and don't have to match — pre might be a `single` echoing an earlier choice while post is a `numberList` for new allocations. The general pattern: **readonly echo + editable new entry, paired in one mixGrid**. Single-column rendering loses the side-by-side reminder the design intends.
 61. ❌ Assuming a piped subset of a randomized parent still gets its own independent reshuffle. **Engine v3.38.0 fixed the duplicate-shuffle bug**: the respondent render no longer carries a second shuffle on top of the engine's one. A piped subset (`options.from: QBrand.selected`) now **inherits the parent's shown order** — not an independent reshuffle. This is research-methodology correct and matches `Q.all` / `Q.selected`, but a legacy survey that relied on the broken reshuffle will see its displayed order change (data unaffected — stored by code). If you genuinely need an independent reshuffle on the child, give the child its own `order: random` **and** be aware that stored codes stay the same (§3.6 behavior-change note). Related: for a loop that must iterate in the parent's shown order, use `options.from: QBrand.selected` + `order: QBrand.all` (expression form, §6.3) — no helper required.
 62. ❌ Adding `order: Q.all` to a question whose `options.from:` already pipes from the parent. Redundant — the engine v3.38.0 auto-inheritance already produces that sequence. The expression form on `order:` / `scale.order:` is reserved for surfaces that **don't** auto-inherit: **loops** (iteration order follows source shown order) and **blocks** (child-block sequence from a stored `[2,4,1,3]`-style list). On questions, the resolver gets the right answer with just `options.from:` — leave the question clean. Worked example: `options.from: q1BrandsAware()` on a `multi` Q2 is enough; `order: Q1.all` on top is dead code. (§3.6, §6.3)
+63. ❌ Hand-computing a multi-dim quota cell code with arithmetic. `cell = (ag - 1) * 2 + g` works only when the Quota Builder numbers cells in exactly that order with exactly that stride — change the cell table and the arithmetic silently maps every respondent to the wrong cell. Write the full if/elif mapping instead (§15.1 Pattern B): one row per cell, label-commented, matching the Builder table 1:1. The DSL mapping is the author–Builder contract; arithmetic hides that contract behind a formula no reviewer can audit against the qnr. Flag any divergence between the mapping and the delta-log'd cell list.
+64. ❌ Dropping the quota gate because "`endSurvey("complete")` auto-fills." `endSurvey("complete")` **counts**, it does not **screen**. Removing the read-only `quota(...).isOpen` test means every over-quota respondent completes and gets counted — the capped group overfills, not stops. A capped multi-dim quota always needs the explicit gate (§15.1 Pattern B). Correct over-correction when `.fill()` was removed: delete the write, keep the read. The structural pair is `if not quota(...).isOpen: endSurvey("quotafull")` for the screen, and the eventual `endSurvey("complete")` for the count — both are required.
 
 ---
 

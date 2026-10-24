@@ -3,6 +3,49 @@
 All notable changes to the Fieldbase AI SP Kit. When the version here is newer than the
 copy you uploaded to an assistant, re-upload that assistant's bundle (`bundles/<ai>/`).
 
+## v0.4.3 — 2026-10-24
+
+Doc fix. §15.1 documented only the **single-dimension** quota gate — fine
+when the cell code happens to equal the dimension value, silent on everything
+else. Field report: when faced with a multi-dim quota (e.g. Age × Gender),
+AI programmers were defaulting to one of two broken outputs:
+
+1. Hand-arithmetic to compute the cell code — brittle, breaks the moment the
+   Builder reorders cells.
+2. **Dropping the gate entirely** on the assumption that `endSurvey("complete")`
+   handles enforcement. It does not — `complete` **counts** the fill, it does
+   not **screen**. Over-quota respondents sailed through and overfilled every
+   cell.
+
+Changes:
+
+- **§15.1 restructured** — clearer signature statement (strictly 2-arg, no
+  auto-match), added a prominent "`complete` counts, does not screen"
+  warning, and split the gate guidance into two named patterns:
+  - **Pattern A — single-dimension** (unchanged, cell code == dim value).
+  - **Pattern B — multi-dimension** (full worked Age × Gender example from
+    the kit's own streaming_wars_2026 example). Shows the canonical
+    derivation + hidden interlocked cell question + read-only gate triple.
+    Explains WHY the if/elif chain (not arithmetic) and WHY the hidden
+    interlocked question (export + analyst visibility).
+
+- **§15.2 updated** — new step 2 explicitly directs the AI programmer to
+  author Pattern B for every capped multi-dim quota.
+
+- **§17 mistake #63** — hand-computing a multi-dim cell code with
+  arithmetic. The if/elif mapping is the author–Builder contract;
+  arithmetic hides that contract behind an auditable-only-by-math formula.
+
+- **§17 mistake #64** — dropping the quota gate because
+  "`endSurvey("complete")` auto-fills." The structural pair is
+  `if not quota(...).isOpen: endSurvey("quotafull")` for the screen, and
+  the eventual `endSurvey("complete")` for the count — **both** are
+  required.
+
+No code changes; linters unchanged; engine contract unchanged (still tracks
+v3.38.x). The pattern was already in streaming_wars_2026.yml — this release
+just documents it.
+
 ## v0.4.2 — 2026-10-23
 
 Doc fix. The §6.3 loop property section said *"Exactly one of
