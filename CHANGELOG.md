@@ -3,6 +3,48 @@
 All notable changes to the Fieldbase AI SP Kit. When the version here is newer than the
 copy you uploaded to an assistant, re-upload that assistant's bundle (`bundles/<ai>/`).
 
+## v0.4.4 — 2026-10-26
+
+Doc fix. Field report: an AI edit that added one new question also silently
+normalized "Strongly agree" to "Strongly Agree" across a 5-point grid,
+retitlecased half the brand list, and dropped trailing full stops from four
+option labels — a change nobody asked for, in a survey already in field,
+that invalidated the collected data for every touched surface and forced a
+re-field. The kit had **no rule** against this: "verbatim" appeared four
+times in the reference, but only for identifiers (`qid`, hidden-helper
+names) — never for display text.
+
+Linter cannot catch this (it does not see the source spec, by design), so
+the fix is a hard-rule prose patch:
+
+- **New §0 hard rule #9** — never reword, rephrase, re-punctuate, expand,
+  or "improve" an existing question's text or option labels unless the
+  instruction explicitly asks you to change that specific wording.
+  Governs every edit path. Lists the exact surfaces it covers
+  (`title:` / `text:` / `label:` / `prompt:` / scale and row labels /
+  `validation:` error strings / piped text literals). States the data-
+  integrity consequence: changing wording of a question already in field
+  invalidates its data and forces a re-field. For fresh-spec conversion:
+  copy **verbatim** from the source — same casing, punctuation,
+  contractions, trailing periods. Typos → either keep with
+  `# verbatim: original spec` on the line or log the fix in the
+  `delta-log`; never silently normalize.
+
+- **§0.1 bright-line row** — "Rewording / re-punctuating an existing
+  question's text, option labels, row labels, or validation error strings
+  during an edit the user did not ask about" → leave verbatim; name any
+  intended wording change in the `delta-log`.
+
+- **§17 mistake #65** — the full failure-mode writeup with the Field
+  report scenario, the "edit is not permission to tidy" reframe, and the
+  pre-edit scan rule (confirm every string the edit passed near is
+  byte-identical to the input unless the request named it).
+
+No code changes; linters unchanged; engine contract unchanged (still
+tracks v3.38.x). The rule is enforceable only at the AI's own output
+layer — this release gives it an unambiguous reference to self-check
+against.
+
 ## v0.4.3 — 2026-10-24
 
 Doc fix. §15.1 documented only the **single-dimension** quota gate — fine
