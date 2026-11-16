@@ -3,6 +3,39 @@
 All notable changes to the Fieldbase AI SP Kit. When the version here is newer than the
 copy you uploaded to an assistant, re-upload that assistant's bundle (`bundles/<ai>/`).
 
+## v0.4.5 — 2026-11-16
+
+Doc fix. The reference predated conjoint on the platform. It told the AI to
+leave a `type: cbc` / `type: maxdiff` stub and flag "configure via the CBC
+wizard" — **there is no CBC or MaxDiff wizard** — and its accessor table
+listed `QCbc.task(T).chosen`, which the engine never had. Field report: a
+generated survey shipped a bare conjoint stub plus routing on `.chosen`, and
+neither half worked.
+
+No linter change (the linter reads these blocks cleanly already).
+
+- **New §2.1 "Conjoint — `cbc` and `maxdiff`"** — the question is written in
+  full: `design:`, `versionSource: systemBalanced` (or `systemRandom`, or an
+  expression), `noneOption` / `noneLabel`, `responseMode` (`choice` / `rating`
+  / `rank`) with `scale:`, `bestLabel` / `worstLabel`, `followUp:`. The only
+  human task is uploading the design file in Assets → Designs under the name
+  used in `design:`.
+- **Reading answers after the exercise** — `QCbc.task(T).selected` (1 = first
+  concept, 0 = none; `.any([...])`, `== 0` / `!= 0`), `.ratings(N)`,
+  `.rank(N)`, `.level(A)` (the level of attribute A in the chosen concept;
+  pipes as its label), and `QMaxDiff.task(T).best` / `.worst` with `.code`,
+  `.label`, `.answered`, `.any([...])`. `.chosen` is gone from the reference.
+- **In-task follow-ups** — a follow-up `if:` without `task(T)` runs on every
+  task against the task being answered; one that names `task(T)` is asked in
+  task T only.
+- **§A scope, §2 type table, §11 accessor table + subtleties, §17 mistake
+  #21, §19 classification + delta-log example** — `cbc` / `maxdiff` moved out
+  of the "wizard-configured, stub only" lists; `cardSort` and the annotation
+  types stay there unchanged.
+- **Bundle guides** (`bundles/claude/SKILL.md`, `bundles/chatgpt/HOW-TO.md`)
+  and the stress-test example's comments carried the same wizard claim —
+  corrected to match.
+
 ## v0.4.4 — 2026-10-26
 
 Doc fix. Field report: an AI edit that added one new question also silently

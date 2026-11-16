@@ -358,12 +358,14 @@ When the qnr defines its own hidden-helper variables (the SHOPPER doc lists `HQD
 - Codes question text, instructions, options, scale, groups (with anchors / exclusives / specifies / DK / None-of-these boilerplate).
 - Authors `if:` show-conditions, `validation: |` Python blocks, `script:` flow logic, screen-out termination, piping, masking via `options.from`/`scale.from`.
 - Authors `type: lookup` questions that **reference** an existing named list asset.
+- Authors `type: cbc` / `type: maxdiff` conjoint questions **in full**, referencing an uploaded design by name (§2.1).
 - Calls `endSurvey("terminate")` for screen-outs and `endSurvey("complete")` at the end of qualifying paths.
 - Writes a `- note: |` `delta-log` block at the bottom flagging every assumption and every wizard handoff.
 
 **Human programmer does (NOT the AI programmer — leave stubs and flag in delta-log):**
 - **Quota cell definitions** — created via the Quota Builder UI. AI marks which questions feed quotas, inserts `endSurvey("complete")`, and (when applicable) **authors the least-fill assignment script that reads from the quota** (§16.10). AI names the required quota group in a comment directly above the script so the human knows what to build. AI does **not** generate the cell tables themselves.
-- **Research module wizards** — `cbc`, `maxdiff`, `cardSort`, `textAnnotation`, `imageAnnotation`, `videoAnnotation`. Wizard-configured. AI inserts a stub `- qid:` with `type:` and `text:` only.
+- **Research module wizards** — `cardSort`, `textAnnotation`, `imageAnnotation`, `videoAnnotation`. Wizard-configured. AI inserts a stub `- qid:` with `type:` and `text:` only.
+- **Conjoint design uploads** — uploading the CBC / MaxDiff design file in Assets → Designs. There is **no CBC or MaxDiff wizard**: AI authors the `cbc` / `maxdiff` question in full (§2.1) and flags the design name the file must be uploaded under.
 - **Lookup list data uploads** — uploading the `.json` / `.csv` to the lookup server. AI authors against the named list and flags the expected list name + columns.
 - **List Assets uploads** — same idea for any list-asset workspace.
 - **Custom HTML/CSS/JS modules** — `custom: |` content edited via the Custom editor.
@@ -487,17 +489,118 @@ Same rule for Roman-numeral codes (`i.`, `ii.`, `iii.`) and any other label sche
 | `gridNumber` | Numeric value per (row × column) cell. | Uses `rows:` and `cols:` keywords (not `options:` / `scale:`). **Both axes take inline numeric codes — `rows: { 1: Jan, 2: Feb }` — NOT a nested `rows: { options: listName }` shape.** |
 | `mixGrid` | Transposed shared-row container; nested column qids. | Children: `single`, `multi`, `rank`, `openList`, `numberList`, `gridSingle`. |
 | `lookup` | Record from external list asset. | Styles: `searchInput` (default), `dropdown`, `cascading`. |
+| `cbc` | Per task: the concept chosen (choice mode), a scale code per concept (rating mode), or a rank position per concept (rank mode). | Choice-based conjoint from an uploaded design. Authored in full — §2.1. |
+| `maxdiff` | Per set: the best item code and the worst item code. | MaxDiff from an uploaded design. Authored in full — §2.1. |
 
 **Research-module types — do not author these in DSL:**
-`cbc`, `maxdiff`, `cardSort`, `textAnnotation`, `imageAnnotation`, `videoAnnotation`. If the doc references one, leave a stub:
+`cardSort`, `textAnnotation`, `imageAnnotation`, `videoAnnotation`. If the doc references one, leave a stub:
 
 ```yaml
-- qid: ConjointTask
-    type: cbc
-    text: Which option would you choose?
+- qid: QCardsort
+    type: cardSort
+    text: Drag each item into the category it best belongs to.
 ```
 
-Then flag in delta-log: "Configure CBC attributes/levels via the CBC wizard."
+Then flag in delta-log: "Configure cards and buckets via the cardSort wizard."
+
+`cbc` and `maxdiff` are **not** in that list — they are plain DSL, written in full (§2.1).
+
+### 2.1 Conjoint — `cbc` and `maxdiff`
+
+**There is no CBC or MaxDiff wizard. Write the question in full.** The only human task is uploading the design file in Assets → Designs; `design:` must equal that design's name there. If the brief does not give the name, use the design file's name without its extension and say in the delta-log that the design must be uploaded under that name. Never invent or retype a design matrix — versions, tasks, concepts, attribute levels, items and their labels all live in the uploaded file, not in the `.yml`.
+
+```yaml
+- qid: QCbc
+    type: cbc
+    text: Which of these would you buy?
+    design: PlanDesign
+    versionSource: systemBalanced
+    noneOption: True
+    noneLabel: None of these
+
+- qid: QMaxDiff
+    type: maxdiff
+    text: Which matters most, and which least?
+    design: FeatureDesign
+    versionSource: systemBalanced
+    bestLabel: Most important
+    worstLabel: Least important
+```
+
+| Property | On | Meaning |
+|---|---|---|
+| `design` | `cbc`, `maxdiff` | Name of the design uploaded in Assets → Designs. Required. |
+| `versionSource` | `cbc`, `maxdiff` | `systemBalanced` — the platform deals design versions evenly (the default to write). `systemRandom` — deals them at random. Use an expression instead only when the document asks for its own assignment, e.g. `versionSource: hVersion.value`. |
+| `noneOption` / `noneLabel` | `cbc` | `noneOption: True` adds a "none of these" answer to every task; `noneLabel` is its text. |
+| `responseMode` | `cbc` | `choice` (default) — one concept picked per task. `rating` — every concept rated on `scale:`. `rank` — the concepts ordered within the task. |
+| `scale` | `cbc` | Code → label map for `responseMode: rating`, where it is required. Not used in the other modes. |
+| `bestLabel` / `worstLabel` | `maxdiff` | Text of the two pick buttons (defaults: "Best" / "Worst"). |
+| `followUp` | `cbc`, `maxdiff` | Comma-separated qids of questions asked inside each task (see "In-task follow-ups" below). |
+
+A conjoint question takes **no** `options:`, `options.from:`, `group:`, `min` / `max` / `exact` — the concepts and items come from the design. `scale:` is valid on `cbc` in rating mode only, never on `maxdiff`.
+
+```yaml
+- qid: QCbcRate
+    type: cbc
+    text: How likely would you be to buy each of these?
+    design: PlanDesign
+    versionSource: systemBalanced
+    responseMode: rating
+    scale:
+        1: Definitely would not buy
+        2: Probably would not buy
+        3: Might or might not buy
+        4: Probably would buy
+        5: Definitely would buy
+```
+
+**Reading the answers after the exercise** (in a `- script:`, an `if:`, or a pipe). `T` is the task number, `N` the concept's column, `A` the attribute's position in the design — all from 1.
+
+| Read | Mode | What it is |
+|---|---|---|
+| `QCbc.task(T).selected` | choice | The concept chosen in task T, as a selection: 1 = first concept, 2 = second, …, **0 = the none option**. Test it with `.any([...])` — `if: QCbc.task(3).selected.any([1, 2])`, none is `.any([0])` — or compare it: `QCbc.task(3).selected != 0`. Never pipe it directly. |
+| `QCbc.task(T).level(A)` | choice | The level of attribute A in the concept chosen in task T. `.any([2, 4])`, `.code` (the level number), `.label`, `.answered` (False when none was chosen). Pipes as the level's label: `{{ QCbc.task(3).level(1) }}`. |
+| `QCbc.task(T).ratings(N)` | rating | The scale code concept N got. Compares as a number (`QCbc.task(1).ratings(2) >= 4`); also `.any([4, 5])`. |
+| `QCbc.task(T).rank(N)` | rank | The position concept N got, 1 = top. |
+| `QMaxDiff.task(T).best` / `.worst` | — | The item picked best / worst in set T. `.code` (the item code), `.label`, `.answered`, `.any([5, 6])`. Pipes as the item's text: `{{ QMaxDiff.task(2).best }}`. |
+
+- **`level(A)` — not the column number — says WHAT was chosen.** The design shuffles concepts across columns, so "chose brand X in task 3" is `QCbc.task(3).level(1).any([2])` (level 2 of attribute 1), never a test on `.selected`.
+- **To show or reuse the chosen column**, copy it into a hidden `single` whose options are `0:` (the none label), `1: A`, `2: B`, … with `hChoice.set(QCbc.task(3).selected)`, then pipe `{{ hChoice.selectedLabel }}`.
+- **To store a rating or rank in a hidden `number`**, wrap it: `hRating.set(int(QCbc.task(1).ratings(2)))`.
+- **There is no `.chosen`, `.value`, `.selectedLabel`, `.answered` or `.none`** on `QCbc` or on `QCbc.task(T)`.
+
+**In-task follow-ups** ("why did you choose that?"). List them in `followUp:` on the `cbc` / `maxdiff`, and write each follow-up as its own `- qid:` block (`single`, `multi`, `open` or `number`) directly after the conjoint question. The platform shows a follow-up under the task once the task is answered, while the concepts are still on screen — never as a page of its own. Its `if:` decides where it is asked:
+
+| Follow-up `if:` | Asked | Examples |
+|---|---|---|
+| No `task(T)` — reads the task being answered | On **every** task where the condition holds | `if: QCbc.selected.any([1, 2])` (0 = none) · `if: QCbc.level(1).any([2, 4])` · `QCbc.ratings(N)` · `QCbc.rank(N)` · `if: QMaxDiff.best.any([5, 6])` |
+| Names `task(T)` | In task T **only** | `if: QCbc.task(3).selected.any([1, 2])` — once, in task 3, when the first or second concept was chosen there · `if: QMaxDiff.task(2).best.answered` — in set 2 |
+| No `if:` | On every task | |
+
+```yaml
+- qid: QCbc
+    type: cbc
+    text: Which of these would you buy?
+    design: PlanDesign
+    versionSource: systemBalanced
+    noneOption: True
+    noneLabel: None of these
+    followUp: QWhyNone, QWhyThird
+
+- qid: QWhyNone
+    type: open
+    text: Why did none of these appeal to you?
+    if: QCbc.selected.any([0])
+
+- qid: QWhyThird
+    type: open
+    text: What made you pick the {{ QCbc.level(1) }} option?
+    if: QCbc.task(3).selected != 0
+```
+
+- Follow-up text can pipe the task being answered: `{{ QCbc.level(1) }}` (the chosen level's label), `{{ QMaxDiff.best }}` (the item's text). It **cannot** pipe a hidden question set by a script — scripts run only after the whole exercise.
+- A document that asks about one particular choice ("thinking about the third choice…") is an in-task follow-up with `task(T)`.
+- Follow-up answers are exported per task and **cannot be read by later logic**. When later routing depends on the answer, ask it as an ordinary question after the exercise instead, reading `QCbc.task(T)` as above.
 
 ---
 
@@ -1892,8 +1995,10 @@ elif isNumeric(QAge.value) and toNumeric(QAge.value) < 18:
 | `lookup` (single) | `value`, `label`, `record`, `matched`, `answered`, `notAnswered` | `field(col)`, `set`, `reset` |
 | `lookup` (multi) | `values`, `labels`, `records`, `size`, `answered`, `notAnswered` | `add(value)`, `remove(value)`, `reset` |
 | `loop` var | `value`, `selectedLabel`, `all`, `allLabels`, `at`, `size` | (none) |
-| `cbc` (research module) | `task(T)` — returns the task proxy for task index T (1-based) | (author uploads attributes/levels via CBC wizard) |
-| CBC task proxy (`QCbc.task(T)`) | `.ratings(N)` — rating captured for concept in column N (1-based). `.rank(N)` — rank position captured for concept in column N (1-based). `.chosen` — chosen concept column (1-based). | (none) |
+| `cbc` | (none after the exercise — read a task through `task(T)`. Inside an in-task follow-up, `selected`, `ratings(N)`, `rank(N)`, `level(A)` on the question read the task being answered — §2.1) | `task(T)` — returns the task slice for task T (1-based) |
+| CBC task slice (`QCbc.task(T)`) | `selected` — the concept chosen, as a selection (choice mode; 1 = first concept, 0 = none; test with `.any([...])`, `== 0` / `!= 0`) | `ratings(N)` — scale code concept N got (rating mode). `rank(N)` — rank position concept N got, 1 = top (rank mode). `level(A)` — level of attribute A in the chosen concept (choice mode): `.code`, `.label`, `.answered`, `.any([...])`; pipes as its label. N and A are 1-based. |
+| `maxdiff` | (none after the exercise — read a set through `task(T)`. Inside an in-task follow-up, `best` / `worst` on the question read the set being answered — §2.1) | `task(T)` — returns the task slice for set T (1-based) |
+| MaxDiff task slice (`QMaxDiff.task(T)`) | `best`, `worst` — the item picked: `.code`, `.label`, `.answered`, `.any([...])`; pipes as the item's label | (none) |
 
 ### Row-level (`.row(code)` / `.at(index)`)
 
@@ -1919,6 +2024,7 @@ elif isNumeric(QAge.value) and toNumeric(QAge.value) < 18:
 - **`.all` always returns the full authored domain** regardless of any active mask.
 - **Loop `.at` is a positional 1-based index**, not a collection method.
 - **CBC per-task accessors are numeric, 1-based columns everywhere.** Write `QCbc.task(1).ratings(1)` — the rating for the concept in column 1 (= "A"). The bracket/letter form `QCbc.task(1).ratings["A"]` is a **silent no-op in live surveys** (it compiled to `unparsed` on the published path and only ever worked in editor preview). Never author it.
+- **CBC has no `.chosen`.** The concept picked in a task is `QCbc.task(T).selected` (1 = first concept, 0 = the none option); what that concept *was* is `QCbc.task(T).level(A)`, because the design shuffles concepts across columns. There is also no `.value`, `.selectedLabel`, `.answered` or `.none` on `QCbc` or `QCbc.task(T)` (§2.1).
 - **`.selected` excludes `isolate: True` codes across every type.** The old pattern of writing `Q.selected.any([99])` to detect a "Prefer not to answer" opt-out now returns False even when the respondent selected it. For most survey logic **use `Q.answered` instead** — it returns True whether the respondent gave a real answer or picked the opt-out, which is what you usually want for skip logic and required gates. A dedicated opt-out accessor was specced (`Q.optedOut` / `Q.isolated`) but is **not required** for typical authoring — reach for it only if a downstream branch genuinely needs to distinguish "answered normally" from "opted out", and check the current runtime API for the shipped name.
 - **`.answered` returns True when only the opt-out is selected.** So a `required: True` question with an `isolate: True` opt-out is satisfied by checking the opt-out — no separate handling needed.
 - **`.all` excludes `isolate: True` options from the returned domain.** So `options.from: QAreas.all.minus([3])` on a downstream question won't include the opt-out code even if the source question has one. This is intentional — masks don't propagate opt-outs.
@@ -3259,7 +3365,7 @@ Related shortcuts in the same vector-thinking family:
 18. ❌ `total: True` to mean "validate the sum" — `total:` only controls *display*; use `sum:` and/or `validation:`.
 19. ❌ Reading a respondent answer before its question is shown. Setting forward (`Q.set(...)`) for prefill is fine.
 20. ❌ Multi-select on cascading lookup or with `source.matchOnly: True` — both reject `multi: True`.
-21. ❌ Authoring `cbc` / `maxdiff` / `cardSort` / annotation modules in DSL — leave a stub and flag.
+21. ❌ Authoring `cardSort` / annotation modules in DSL — leave a stub and flag. The opposite holds for `cbc` / `maxdiff`: ❌ leaving a stub or deferring to a "CBC wizard" (there is none) — write them in full (§2.1); and ❌ reading the choice with `.chosen` (it does not exist) — use `QCbc.task(T).selected` / `.level(A)`.
 22. ❌ Authoring quota cells in DSL — human-task.
 23. ❌ Stopping mid-document to ask a clarifying question — code best-effort and put it in the delta-log.
 24. ❌ Comparing `request.param("...")` to `None` — it returns `""` for missing keys.
@@ -3369,7 +3475,8 @@ When a `.docx` is dropped (manually or via the upload button), follow this in on
    - Multi-question table sharing rows → `mixGrid`
    - Pick-from-large-list → `lookup`
    - Read-only intro/outro → `info`
-   - CBC / MaxDiff / CardSort / annotation → stub only (human task)
+   - Choice-based conjoint → `cbc`; MaxDiff / best-worst scaling → `maxdiff` — both authored in full (§2.1); only the design upload is a human task
+   - CardSort / annotation → stub only (human task)
 
 4. **Code numerically.** Apply the list-extraction protocol (§18). Mark anchors / exclusives / specifies / DK-NA boilerplate. Default code conventions: `97` Other (specify), `98` Don't know, `99` None of these / Prefer not to say (with `anchor: True` and on `multi` typically `exclusive: True`).
 
@@ -3393,7 +3500,7 @@ When a `.docx` is dropped (manually or via the upload button), follow this in on
     - Quota: gender_age (QGender × QAgeBand) — build cells in Quota Builder.
     - Quota: total cap 1000 completes.
     - Lookup list: target_zips — upload ZIP-code data file with columns 'zipcode', 'state'.
-    - CBC: ConjointTask — configure 4 attributes (price, brand, speed, support) via CBC wizard.
+    - Conjoint design: ConjointTask reads design 'PlanDesign' — upload the CBC design file (4 attributes: price, brand, speed, support) in Assets → Designs under exactly that name.
     - Custom JS module: QIntroVideo — author custom video player in Custom editor.
 ```
 

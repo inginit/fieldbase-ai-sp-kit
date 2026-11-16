@@ -614,9 +614,9 @@
 # -----------------------------------------------------------------------------
 #
 # Per the authoring reference §2: `imageAnnotation`, `videoAnnotation`, `textAnnotation`,
-# `cbc`, `maxdiff`, `cardSort` are research modules. DSL stubs only; the
-# human programmer configures them via the platform wizard. Flag in
-# delta-log.
+# `cardSort` are research modules. DSL stubs only; the human programmer
+# configures them via the platform wizard. Flag in delta-log.
+# (`cbc` / `maxdiff` are different — authored in full, see §2.1.)
 
 - qid: QAnnotImage
     type: imageAnnotation
@@ -1625,7 +1625,9 @@
       - URL param `lang` configured to drive hCountry at survey entry.
 
     NOT INCLUDED — by design
-      - CBC, MaxDiff conjoint tasks (research modules; same wizard handoff).
+      - CBC, MaxDiff conjoint tasks (authored in full per the reference §2.1,
+        but they need a design uploaded in Assets → Designs, which this
+        contract test does not ship).
       - Real survey content (this is a contract test, not a fielding-ready
         instrument).
       - Multi-currency formatting (showcase pipes use USD; %.2f in the pipe

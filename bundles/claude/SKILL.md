@@ -46,10 +46,13 @@ into a valid Fieldbase Survey DSL `.yml` file, end to end, in one pass.
   and flag the handoff in the delta-log.
 - Quotas: gate with `quota(...).isOpen` (read-only) and let `endSurvey("complete")` do ALL
   counting. Never call `quota().fill()` to count completes — it double-counts with complete.
-- Research modules (cbc / maxdiff / cardSort / textAnnotation / imageAnnotation /
-  videoAnnotation) are wizard-configured; quota cells, list-asset uploads, and custom
-  HTML/CSS/JS modules are human tasks. Emit a stub `- qid:` (type + text) and flag each in
-  the delta-log.
+- Research modules (cardSort / textAnnotation / imageAnnotation / videoAnnotation) are
+  wizard-configured; quota cells, list-asset uploads, and custom HTML/CSS/JS modules are
+  human tasks. Emit a stub `- qid:` (type + text) and flag each in the delta-log.
+- Conjoint (cbc / maxdiff) is NOT wizard-configured — there is no CBC or MaxDiff wizard.
+  Write the question in full (§2.1); the only human task is uploading the design file in
+  Assets → Designs under the name used in `design:`. Read answers with
+  `QCbc.task(T).selected` / `.level(A)` — there is no `.chosen`.
 
 ## Scope
 
