@@ -3,6 +3,76 @@
 All notable changes to the Fieldbase AI SP Kit. When the version here is newer than the
 copy you uploaded to an assistant, re-upload that assistant's bundle (`bundles/<ai>/`).
 
+## v0.5.0 — 2026-11-19
+
+Tracks engine **v3.45.0** (v3.44.0 replaced the script language's core; v3.44.1 fixed
+dates and blank rows in totals, both found while writing this update; v3.45.0 made
+the end page a named one). Code is now
+read by a real grammar and checked strictly before publish. Anything not explicitly
+supported is a publish error — nothing is guessed. The reference still described the
+old, lenient language, so an AI following it wrote surveys the platform now refuses.
+
+Every script feature the reference teaches was run against the engine, and every code
+block and example survey was put through its checker.
+
+**Reference (`SURVEY-DSL-AUTHORING.md`)**
+
+- **New §6.7 "Ending the survey".** `endSurvey` names its end page:
+  `endSurvey("terminate", TermPage)`, optionally followed on the next line by
+  `redirectUrl("https://…")`. An `endSurvey` with neither is refused at publish
+  (engine v3.45.0), and the engine no longer shows "the question written after the
+  script" as the closing page. One `type: info` page serves any number of endings;
+  end pages sit together above `- lists:` and are never part of the flow. Every
+  example in the reference, a hard-rule row, the built-ins table (`redirectUrl` is
+  now documented) and mistakes 73–77 teach the new form.
+- **§10 rewritten.** New §10.0 "The strict rules": a condition is a yes/no test
+  (`if Q.value:` and `if: 1` are refused); `.answered` is True / False (never
+  `== 0` / `== 1`); like with like (no number-with-text); codes are numbers and must
+  exist on the question; text and selections are never `None`; a write gives nothing
+  back; a condition stays on one line; masks and orders must give codes.
+- **Unanswered answers.** An unanswered coded / numeric answer is `None`; arithmetic
+  or `<` `>` on it is a runtime error. Guard with `.answered` or `(x or 0)`.
+  `sum()` / `avg()` / `min()` / `max()` over a list pass over blank rows, so
+  `sum(Q.values)` stays the idiom for allocation checks.
+- **Now allowed:** `break` / `continue`, the inline conditional `a if c else b`
+  everywhere (including inside `.set(...)`), `x[-1]`, `.replace(old, new)`,
+  `.find(text)`, `.split()` with no argument, compound expressions in `.set(...)`.
+- **Now refused:** block comments `#[[ … #]]` (use `#` or `- note: |`), `//`,
+  f-strings, `"%s" % x`, `.format()`, default parameter values, `a, b = 1, 2`,
+  backslash line continuation, extra arguments on text methods, custom
+  `endSurvey()` outcomes.
+- **Dates:** `datetime.today()` / `datetime.now()` with `.year`, `.month`, `.day`,
+  `.hour`, `.minute`, `.second`, `.isoformat()`. No `timedelta`, no date arithmetic.
+- **Masks:** a question whose `options.from:` / `scale.from:` leaves nothing to show
+  is skipped automatically and exports blank — the `if: len(helper()) > 0` guard is
+  no longer needed. §8 documents row and scale filters on a mixGrid.
+- **§11 methods:** list / dict methods you call on something you built (`.append`,
+  `.extend`, `.remove`, `.sort`, dict `.set`) give nothing back; only survey-collection
+  methods return a value. `set(rows).add([97, 98])` was taught as the multi-add idiom
+  and has never worked (it nests the list) — replaced with `rows.extend([97, 98])`.
+- **`fail()` piping:** the message can read the validation's own variables. With the
+  `QErrMsg` bank, the static sentence stays in the bank and the variable is piped in
+  the call: `fail(QErrMsg.row(6).label + " You have {{ total }}.")`.
+- **Examples in the reference corrected** where they were invalid: three loops with a
+  `questions:` wrapper or no `options:`, the §8 mixGrid sample (children of types the
+  engine rejects), text codes on hidden singles (`hSegment.set("premium")`), a
+  backslash-continued `if`.
+- §0.1 checklist, §9, §12, §13, §16 patterns and §17 mistakes (#12, #14, #15, #24,
+  #29, #31, #52, #53, #56, #58 revised; #66–#72 added) brought in line.
+
+**Example surveys** — `streaming_wars_2026.yml` and `stress_test_all_features.yml`
+failed the v3.44.0 check (`is None` on text / lists, `"%.2f" %` formatting). Fixed.
+All four examples now end on named end pages (`TermPage`, `QuotaFullPage`,
+`CompletePage`) and pass the v3.45.0 check with 0 errors.
+
+**Linter** (`survey-dsl-lint.js` and `survey_dsl_lint.py`, kept identical)
+
+- Removed: `ternary-in-logic`, `continue-break` (both are valid now).
+- Added (errors): `block-comment-removed`, `floor-division`, `f-string`,
+  `text-format`, `line-continuation`, `answered-compared`, `collection-is-none`,
+  `datetime-form`, `endsurvey-outcome`, `end-without-page` (an `endSurvey(...)` with
+  no end page and no `redirectUrl(...)` on the next line).
+
 ## v0.4.5 — 2026-11-16
 
 Doc fix. The reference predated conjoint on the platform. It told the AI to

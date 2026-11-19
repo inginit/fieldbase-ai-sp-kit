@@ -73,13 +73,13 @@
         4: Australia
 
 # Fire the market quota check right after hMarket is set. Gate only —
-# the engine auto-fills the cell when the respondent reaches endSurvey("complete")
+# the engine auto-fills the cell when the respondent reaches endSurvey("complete", CompletePage)
 # at the end of the survey. (Manual .fill() was removed; it double-counted.)
 - script: |
     if hMarket.value is not None:
         cell = hMarket.value
         if not quota("qtMarket", cell).isOpen:
-            endSurvey("quotafull")
+            endSurvey("quotafull", QuotaFullPage)
 
 - qid: S2
     type: single
@@ -97,8 +97,7 @@
 # Terminate 65+.
 - script: |
     if S2.selected.any(6):
-        endSurvey()
-
+        endSurvey("terminate", TermPage)
 # hAgeGroup derivation: qnr banner categories (used for qtAgeGender cell derive).
 # Per qnr: 18-34 = codes 1-2; 35-54 = codes 3-4; 55-64 = code 5.
 - script: |
@@ -157,8 +156,8 @@
     if cell is not None:
         hAgeGenderCell.set(cell)
         if not quota("qtAgeGender", cell).isOpen:
-            endSurvey("quotafull")
-        # Engine auto-fills the cell on endSurvey("complete") at survey end.
+            endSurvey("quotafull", QuotaFullPage)
+        # Engine auto-fills the cell on endSurvey("complete", CompletePage) at survey end.
 
 - qid: hAgeGenderCell
     type: single
@@ -236,8 +235,7 @@
 # Terminate non-viewers.
 - script: |
     if S6.selected.any(6):
-        endSurvey()
-
+        endSurvey("terminate", TermPage)
 # hViewerType derivation + qtViewer quota check.
 - script: |
     if S6.selected.any(1):
@@ -250,8 +248,8 @@
     v = hViewerType.value
     if v is not None:
         if not quota("qtViewer", v).isOpen:
-            endSurvey("quotafull")
-        # Engine auto-fills the cell on endSurvey("complete") at survey end.
+            endSurvey("quotafull", QuotaFullPage)
+        # Engine auto-fills the cell on endSurvey("complete", CompletePage) at survey end.
 
 - qid: hViewerType
     type: single
@@ -276,8 +274,7 @@
 # Terminate zero-subscription households.
 - script: |
     if S7.value == 0:
-        endSurvey()
-
+        endSurvey("terminate", TermPage)
 - qid: S8
     type: single
     text: Who in your household makes decisions about which streaming services to subscribe to?
@@ -291,8 +288,7 @@
 # Terminate non-decision-makers.
 - script: |
     if S8.selected.any(3):
-        endSurvey()
-
+        endSurvey("terminate", TermPage)
 # -----------------------------------------------------------------------------
 # SECTION B: BRAND FUNNEL
 # -----------------------------------------------------------------------------
@@ -324,8 +320,7 @@
 # Terminate zero-awareness respondents.
 - script: |
     if Q1.selected.any(99):
-        endSurvey()
-
+        endSurvey("terminate", TermPage)
 # Q2: used in past 6 months. Mask = brands selected at Q1 (excluding 99).
 # Helper defined ABOVE the question per §3.2 masking rule.
 - script: |
@@ -349,8 +344,7 @@
 # Terminate no-usage respondents.
 - script: |
     if Q2.selected.size == 0:
-        endSurvey()
-
+        endSurvey("terminate", TermPage)
 # Q3: currently pay for. Mask = brands selected at Q2.
 - script: |
     def q2BrandsUsed():
@@ -432,7 +426,7 @@
     options.from: q2BrandsUsed()
     validation: |
         # All shown brands must be ranked.
-        if Q6.values is None or len(Q6.values) < Q2.selected.size:
+        if len(Q6.values) < Q2.selected.size:
             fail(QErrMsg.row(6).label)
 
 # -----------------------------------------------------------------------------
@@ -514,7 +508,7 @@
     input.min_char: 20
     validation: |
         v = Q8.value
-        if v is None or len(v) < 20:
+        if len(v) < 20:
             fail(QErrMsg.row(4).label)
 
 - qid: Q9
@@ -644,7 +638,7 @@
     input.min_char: 20
     validation: |
         v = Q15.value
-        if v is None or len(v) < 20:
+        if len(v) < 20:
             fail(QErrMsg.row(4).label)
 
 - qid: Q16
@@ -690,7 +684,7 @@
     input.min_char: 20
     validation: |
         v = Q18.value
-        if v is None or len(v) < 20:
+        if len(v) < 20:
             fail(QErrMsg.row(4).label)
 
 # -----------------------------------------------------------------------------
@@ -739,7 +733,7 @@
     input.min_char: 20
     validation: |
         v = Q21.value
-        if v is None or len(v) < 20:
+        if len(v) < 20:
             fail(QErrMsg.row(4).label)
 
 - qid: Q22
@@ -956,7 +950,7 @@
 - script: |
     def q6TopRankBrand():
         vals = Q6.values
-        if vals is None or len(vals) == 0:
+        if len(vals) == 0:
             return None
         return vals[0]
 
@@ -1069,9 +1063,25 @@
         Your responses have been recorded and will be kept confidential.
 
 - script: |
-    endSurvey("complete")
+    endSurvey("complete", CompletePage)
     # !HUMAN — add panel return redirect:
     # redirectUrl("https://panel.example.com/end?rid=" + request.param("rid"))
+
+# -----------------------------------------------------------------------------
+# END PAGES — named by endSurvey(...); shown only to a respondent whose survey
+# ended on them, never on the way through the survey.
+# -----------------------------------------------------------------------------
+- qid: TermPage
+    type: info
+    text: Thank you for your interest. Unfortunately you do not qualify for this study.
+
+- qid: QuotaFullPage
+    type: info
+    text: Thank you for your interest. We already have enough responses from people like you.
+
+- qid: CompletePage
+    type: info
+    text: Thank you. Your answers have been recorded.
 
 # =============================================================================
 # REUSABLE LISTS (bottom of file per the authoring reference §5.2)
@@ -1149,7 +1159,7 @@
       T5 — Q1 code 99 (no brand awareness)
       T6 — Q2 empty selection (no brand usage)
       TQ — quota-full at qtMarket, qtAgeGender, or qtViewer (routes to
-        endSurvey("quotafull"))
+        endSurvey("quotafull", QuotaFullPage))
 
     !HUMAN HANDOFFS
       1. Quota Builder — three groups above.

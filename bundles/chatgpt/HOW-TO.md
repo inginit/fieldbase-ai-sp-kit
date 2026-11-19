@@ -48,10 +48,20 @@ HARD RULES (full detail in §0 of the reference):
 - `if:` controls visibility (no show_if / hide_if). Piping is {{ ... }}.
 - A `- loop:` takes DIRECT children (like if/elif/else), NOT a `questions:` wrapper. Every
   loop id must be unique. Define each helper function once (don't re-declare it per block).
+- Script code is strict (§10 of the reference; engine v3.44.0+). A condition is a yes/no
+  test (if Q.answered: — never if Q.value:, never .answered == 1). Codes are numbers
+  and must exist on the question they are used with. Text and selections are never None;
+  guard unanswered numbers with (x or 0) or .answered. No #[[ ]] block comments, //,
+  f-strings or % formatting. Anything the reference does not list is a publish error.
 - Options are a multi-line block, one code per line — never inline {1: Yes, 2: No}.
 - Style names are camelCase (imageCards, not image_cards). default.errors is True/False.
 - Route respondent-facing validation copy through a hidden multi + a reusable error-message
   list (a "QErrMsg" pattern), so every fail() reads a pipeable label from one place.
+- Ending the survey: every `endSurvey` names its end page — `endSurvey("terminate", TermPage)`,
+  `endSurvey("quotafull", QuotaFullPage)`, `endSurvey("complete", CompletePage)` — and / or is
+  followed on the next line by `redirectUrl("https://…")`. A bare `endSurvey("terminate")` is
+  refused. End pages are `type: info` questions at the bottom of the file, reused by every
+  ending of that kind; never rely on "the question after the script" (reference §6.7).
 - Quotas: gate with `quota(...).isOpen` (read-only) and let `endSurvey("complete")` do ALL
   counting. Never call `quota().fill()` to count completes — it double-counts with complete.
 - Research modules (cardSort / textAnnotation / imageAnnotation / videoAnnotation) are

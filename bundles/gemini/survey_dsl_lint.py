@@ -22,6 +22,15 @@ import sys
 
 CODE_KEYS = {"script", "validation", "if"}
 STRUCT = re.compile(r"^\s*-\s*(qid|loop|page|block|if|elif|else|script|note|custom|lists)\b")
+# one-line properties and flow headers whose value is survey code
+LOGIC_LINE = re.compile(r"^\s*(-\s+(if|elif)\b|(if|validation|options\.from|scale\.from|order|scale\.order)\s*:)")
+END_OUTCOMES = {"complete", "terminate", "quotafull"}
+_QUOTED = re.compile("\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'")
+
+
+def without_strings(s):
+    # quoted text blanked out, so an operator inside text is not read as code
+    return _QUOTED.sub('""', s)
 
 
 def _indent_of(s):
@@ -76,6 +85,11 @@ def lint_text(text):
         if raw.startswith("\t") or " \t" in raw:
             mk(ln, "error", "tab-indent", "indentation uses a tab — use 4 spaces")
 
+        # R: block comments were removed in engine v3.44.0 — always
+        if re.match(r"\s*#(\[\[|\]\])", raw):
+            mk(ln, "error", "block-comment-removed",
+               "`#[[ ... #]]` block comments were removed — put # on each line, or use a `- note: |` block")
+
         # R: indentation must be a multiple of 4 (warn; skip scalar bodies)
         if not in_scalar and ind % 4 != 0:
             mk(ln, "warn", "indent-4",
@@ -88,18 +102,56 @@ def lint_text(text):
             scalar_indent = ind
             scalar_kind = "code" if key in CODE_KEYS else "prose"
 
+        # text formatting with % or .format() — in logic lines and inside {{ }} pipes anywhere
+        if ((in_scalar and scalar_kind == "code") or LOGIC_LINE.match(code) or "{{" in code) \
+                and re.search(r"""["']\s*(%\s*[A-Za-z_("']|\.format\()""", code):
+            mk(ln, "error", "text-format",
+               '`"..." % x` and `.format()` are not part of the survey language — join text with + and str(...), round with round(x, n)')
+
         # code-logic rules: run outside scalars and inside `code` scalars
         if in_code:
             if re.search(r"\.any\(", code) and not re.search(r"\.selected\.any\(", code) \
                     and not re.search(r"\bquota\(", code):
                 mk(ln, "warn", "any-without-selected",
                    "membership test should be Q.selected.any([...]) — there is no Q.any(...) form")
-            if re.search(r"=\s*.+\sif\s.+\selse\s", code) and "{{" not in code:
-                mk(ln, "warn", "ternary-in-logic",
-                   "inline ternary (a if c else b) is not allowed in script/validation/if: — use an if/else block")
-            if re.match(r"\s+(continue|break)\s*$", raw):
-                mk(ln, "error", "continue-break",
-                   "continue/break are blocked in the Python subset — invert the predicate instead")
+            # script-language removals of engine v3.44.0 (strict language, §10).
+            # Only on lines that hold logic: a code scalar, or a one-line logic property.
+            is_logic = (in_scalar and scalar_kind == "code") or bool(LOGIC_LINE.match(code))
+            bare = without_strings(code)   # operators inside quoted text are not code
+            if is_logic:
+                if "//" in bare:
+                    mk(ln, "error", "floor-division",
+                       "`//` is not part of the survey language — use int(a / b)")
+                if re.search(r"""(^|[^A-Za-z0-9_])f["']""", code):
+                    mk(ln, "error", "f-string",
+                       "f-strings are not part of the survey language — join text with + and str(...)")
+                if re.search(r"\\\s*$", raw):
+                    mk(ln, "error", "line-continuation",
+                       "a line cannot be continued with a backslash — keep the condition on one line, or name its parts first")
+                if re.search(r"\.(answered|notAnswered|matched)\s*(==|!=)\s*[01]\b", bare):
+                    mk(ln, "error", "answered-compared",
+                       ".answered / .notAnswered / .matched are True or False — write `Q.answered` or `not Q.answered`, never == 0 / == 1")
+                if re.search(r"\.(selected|values|all|selectedLabels)\s+is\s+(not\s+)?None\b", bare):
+                    mk(ln, "error", "collection-is-none",
+                       "a selection or list is never None — test `.size == 0` or `.answered`")
+                if re.search(r"\bdatetime\.timedelta\b", bare):
+                    mk(ln, "error", "datetime-form",
+                       "there is no datetime.timedelta — work with the parts of a date (.year / .month / .day)")
+                outcome = re.search(r"""\bendSurvey\(\s*["']([^"']*)["']""", code)
+                if outcome and outcome.group(1).lower() not in END_OUTCOMES:
+                    mk(ln, "error", "endsurvey-outcome",
+                       'endSurvey("%s") — the outcome is "complete", "terminate" or "quotafull" only' % outcome.group(1))
+                # An ending needs a way out (engine v3.45.0): an end page named in the call, or a
+                # redirectUrl(...) as the next statement. `endSurvey("terminate")` alone is refused.
+                if re.search(r"""\bendSurvey\(\s*(["'][^"']*["'])?\s*\)""", code):
+                    nxt = ""
+                    for later in lines[i + 1:]:
+                        nxt = _code_part(later).strip()
+                        if nxt:
+                            break
+                    if not re.match(r"redirectUrl\s*\(", nxt):
+                        mk(ln, "error", "end-without-page",
+                           'endSurvey(...) needs an end page — endSurvey("terminate", TermPage) — or redirectUrl(...) on the next line')
             if re.search(r"\.fill\s*\(", code) and re.search(r"\bquota\s*\(", code):
                 mk(ln, "error", "quota-fill-removed",
                    'quota().fill() has been removed — the engine auto-fills cells on endSurvey("complete"). Read-only from scripts: .isOpen / .count / .target / .remaining; terminate via endSurvey("quotafull") when full')

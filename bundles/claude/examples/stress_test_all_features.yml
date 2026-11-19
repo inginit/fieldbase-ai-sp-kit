@@ -333,7 +333,7 @@
     input.min_char: 2
     validation: |
         v = QOpenShort.value
-        if v is None or len(v) < 2:
+        if len(v) < 2:
             fail(QErrMsg.row(7).label)
 
 # Style: textarea. For longer free-text.
@@ -349,7 +349,7 @@
     input.min_char: 20
     validation: |
         v = QOpenLong.value
-        if v is None or len(v) < 20:
+        if len(v) < 20:
             fail(QErrMsg.row(7).label)
 
 # openList — multiple free-text inputs, one per row.
@@ -666,7 +666,7 @@
             validation: |
                 v = QDemoZip.value
                 # !HUMAN — replace with lookup against zip-footprint taxonomy.
-                if v is None or len(v) < 5:
+                if len(v) < 5:
                     fail(QErrMsg.row(6).label)
 
 # block: structural grouping (no rendering effect, can carry `order:`).
@@ -755,7 +755,7 @@
         input.maxChar: 14
         validation: |
             v = QUSPhone.value
-            if v is None or not re.fullmatch(r"^\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}$", v):
+            if not re.fullmatch(r"^\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}$", v):
                 fail(QErrMsg.row(8).label)
 
     - qid: QUSNotify
@@ -802,7 +802,7 @@
         # Defensive — should never fire, but safe.
         hSpotlight.set(None)
 
-    # Score-based segment classification (no inline ternaries per §10.2).
+    # Score-based segment classification.
     avg = hAvgRating.value
     if avg is None:
         hSegment.set(None)
@@ -849,7 +849,7 @@
 # !HUMAN — Build a quota group named `qtBattery` with 4 cells (codes 1-4)
 # in the Quota Builder before fielding. The script below reads .isOpen and
 # .count for the least-fill decision. The engine auto-fills the cell on
-# endSurvey("complete") at the end of the survey — no manual .fill().
+# endSurvey("complete", CompletePage) at the end of the survey — no manual .fill().
 
 - script: |
     # Least-fill assignment: pick an open cell with minimum count.
@@ -860,7 +860,7 @@
 
     if len(open_cells) == 0:
         # All cells full — terminate with quotafull status.
-        endSurvey("quotafull")
+        endSurvey("quotafull", QuotaFullPage)
     else:
         # Pick the open cell with the smallest count (least-fill).
         best = open_cells[0]
@@ -871,7 +871,7 @@
                 best = c
                 best_count = cnt
         hQuotaCell.set(best)
-        # Engine auto-fills the cell on endSurvey("complete"). No manual .fill().
+        # Engine auto-fills the cell on endSurvey("complete", CompletePage). No manual .fill().
 
 - qid: hQuotaCell
     type: single
@@ -899,9 +899,9 @@
         Age + 1: <b>{{ QNumAge.value + 1 }}</b><br>
         Grid row selected label: <b>{{ QGridSingleGrid.row(1).selectedLabel }}</b><br>
         Error message catalog entry: <b>{{ QErrMsg.row(1).label }}</b><br>
-        Two-decimal formatted spend: <b>${{ "%.2f" % QNumSpend.value }}</b><br>
+        Spend rounded to 2 decimals: <b>${{ round(QNumSpend.value, 2) }}</b><br>
         Rounded percent: <b>{{ round((QNumAge.value or 0) / 120 * 100) }}%</b><br>
-        Inline conditional (only in piping, not in scripts): <b>{{ "Set" if QNumAge.answered else "Unanswered" }}</b><br>
+        Inline conditional: <b>{{ "Set" if QNumAge.answered else "Unanswered" }}</b><br>
         Loop iteration label: <b>{{ brandLoop.selectedLabel }}</b> (renders the current iteration when piped inside the loop)<br>
 
 # -----------------------------------------------------------------------------
@@ -1407,9 +1407,21 @@
         Assigned segment: <b>{{ hSegment.selectedLabel }}</b>
 
 - script: |
-    endSurvey("complete")
+    endSurvey("complete", CompletePage)
     # !HUMAN — Add panel return URL if applicable.
     # redirectUrl("https://panel.example.com/end?rid=" + request.param("rid"))
+
+# -----------------------------------------------------------------------------
+# END PAGES — named by endSurvey(...); shown only to a respondent whose survey
+# ended on them, never on the way through the survey.
+# -----------------------------------------------------------------------------
+- qid: QuotaFullPage
+    type: info
+    text: Thank you for your interest. We already have enough responses from people like you.
+
+- qid: CompletePage
+    type: info
+    text: Thank you. Your answers have been recorded.
 
 # =============================================================================
 # §L — REUSABLE LISTS (bottom of file per the authoring reference §5.2)
@@ -1596,8 +1608,8 @@
       §14 Stimulus HTML — <b>, <br>, inline formatting in text and labels.
 
       §15 Quotas — quota("qtBattery", code).isOpen, .count for the gate;
-        terminate via endSurvey("quotafull"); engine auto-fills on
-        endSurvey("complete") — no manual .fill() (deprecated).
+        terminate via endSurvey("quotafull", QuotaFullPage); engine auto-fills on
+        endSurvey("complete", CompletePage) — no manual .fill() (deprecated).
 
       §16 Patterns — least-fill quota assignment (§QUO), multi-country
         hCountry pattern (§H), error-message catalog (QErrMsg), masking
@@ -1609,11 +1621,13 @@
         ✓ No bare `Q.any()` without `.selected`
         ✓ No `label.prefix/suffix` on `single`
         ✓ No negative codes
-        ✓ No ternary in scripts
+        ✓ Every condition is a yes/no test (no bare values, no `.answered == 1`)
+        ✓ Codes are numbers, and every code used exists on its question
+        ✓ No `is None` on text answers or selections
         ✓ No `style: dropdown` on `gridSingle`
         ✓ No `- script:` inside `questions:`
         ✓ No inline multi-line `options.from:`
-        ✓ No `continue` / `break` in for / while loops
+        ✓ No `#[[ … #]]` block comments, `//`, f-strings or `%` formatting
 
     HUMAN HANDOFFS
       - Lookup taxonomies (companies, states, counties, cities, medications)

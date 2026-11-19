@@ -22,7 +22,8 @@ agent, a CI step, or a person's editor.
 (<https://thefieldbase.com>) — the `.yml` is imported and published there, which runs
 the authoritative validator, the respondent runtime, quotas, translations, and export.
 This kit is the *authoring* front-end; Fieldbase is where surveys actually run. The
-reference tracks the Fieldbase DSL contract as of engine **v3.34.0**.
+reference tracks the Fieldbase DSL contract as of engine **v3.45.0** (the strict script
+language — see §10 of the reference; named end pages — §6.7).
 
 ## Quick start
 
@@ -81,7 +82,10 @@ It catches the frequent, **mechanical** mistakes fast and offline: tabs / non-4-
 indentation, non-numeric or negative codes, `true`/`false` vs `True`/`False`, inline
 `{k: v}` options, underscored ids, `Q.any(` without `.selected`, snake_case `style:`,
 `style: dropdown` on `gridSingle`, `questions:` on a `- loop:`, duplicate qids / loop
-ids, multi-line `options.from:`, `continue`/`break` in scripts, and more.
+ids, multi-line `options.from:`, and the constructs engine v3.44.0 removed from the
+script language (`#[[ … #]]` block comments, `//`, f-strings, `%` / `.format()` text
+formatting, `.answered == 0/1`, backslash line continuation), an `endSurvey(...)` with
+no end page and no redirect, and more.
 
 It is **not** a compiler. It does not resolve the grammar or a symbol table, so it
 does not catch deep semantic errors (an unknown qid referenced in a script, a

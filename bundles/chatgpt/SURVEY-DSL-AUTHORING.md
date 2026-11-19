@@ -18,7 +18,7 @@ platform's own validator and runtime are the authority on what executes — the 
 in this kit is a fast offline pre-check, not a substitute for import/publish on
 Fieldbase (see §0.2).
 
-> **Kit v0.2.0** · tracks the Fieldbase DSL contract as of engine **v3.34.0**. When
+> **Kit v0.5.0** · tracks the Fieldbase DSL contract as of engine **v3.45.0** (strict script language — §10; named end pages — §6.7). When
 > Fieldbase adds or tightens rules, the pack and the linter are updated together (see the
 > note at the end of §0.2). If your uploaded copy shows an older version than the repo,
 > re-upload the bundle.
@@ -62,13 +62,20 @@ These are the most common style violations across surveys. If an edit touches an
 | `options: {1: Yes, 2: No}` (inline `{k:v}` form) | Multi-line options block, one code per line |
 | Underscores in qids / loop ids / list names (`Q_Age`, `brand_loop`) | camelCase / `x`-between-digits: `QAge`, `brandLoop`, `Q1x1` (§1) |
 | `Q.any([codes])` (no `.selected`) | `Q.selected.any([codes])` — works on **both** single and multi (#54) |
-| `Q.set((Q.value or 0) + 1)` (compound expression in `.set()`) | Extract to a local, normalize `None`, then `.set(n + 1)` (#58) |
+| Arithmetic or `<` / `>` on an answer that may be unanswered (`Q.value + 1`, `Q.value < 3` with no guard) | Coalesce `(Q.value or 0)` or gate on `Q.answered` — `None` in arithmetic is a runtime error (§10.0, #58) |
 | `Q.selected.add([code])` (multi mutation via `.selected`) | Build a fresh tri-state payload + `Q.set({...})` (§12 multi) |
 | Negative option codes (`-5: …`) | Renumber to positive ints; put the original delta in the label (`1: Decreased significantly (-5)`) |
 | `label.prefix:` / `label.suffix:` on `single` | Bake anchors into the first/last option labels |
 | `style: dropdown` on `gridSingle` | Not canonical — drop the property; the platform picks rendering |
 | `style: buttons` with NPS scales: also drop `label.prefix`/`suffix` | Anchors in labels |
-| Inline ternary `a if cond else b` inside `- script:` / `validation:` / `if:` predicates | Proper `if … else …` block (#56). Ternaries OK inside `{{ … }}` piping (different evaluator) |
+| A value used as a condition: `if Q.value:`, `if Q.selected:`, `if not request.param("x"):`, `if: 1` | A yes/no test: `if Q.answered:`, `if Q.selected.size > 0:`, `if request.param("x") == "":` (§10.0, #56) |
+| `Q.answered == 1` / `Q.answered == 0` | `Q.answered` / `not Q.answered` — it is True / False, never a number (§10.0) |
+| Quoted codes or text in a coded hidden: `Q1.value == "2"`, `hSegment.set("premium")` | Codes are numbers: `Q1.value == 2`, `hSegment.set(1)` with the meaning in the option label (§10.0) |
+| A code the question does not declare: `Q1.set(9)`, `Q.row(12)`, `Q.selected.any([1, 9])` | Only codes / rows / scale points that exist on that question — anything else blocks publish (§10.0) |
+| `if Q.value is None` on an `open` question, or on `.selected` / `.values` | Text is `""` and lists are empty, never `None`: `not Q.answered`, `Q.value == ""`, `Q.selected.size == 0` (§10.0) |
+| Block comment `#[[ … #]]` | Removed. `#` on each line, or `- note: \|` between blocks (§10) |
+| f-strings, `"%.2f" % x`, `.format()`, `//` | `"..." + str(x)`, `round(x, 2)`, `int(a / b)` (§10.2) |
+| An `if` test continued onto a second line (`\` or wrapped brackets) | One line, or move the test into a `def` helper (§10.0) |
 | `questions:` wrapper on a `- loop:` block | Loops take DIRECT children (like `if`/`elif`/`else`), NOT a `questions:` wrapper. Validator fires `loop-questions-not-allowed`. `- script:` IS allowed inside loop bodies for per-iteration side effects. `questions:` is still valid on `- page:` and `- block:`, just not on `- loop:` (§6.3) |
 | Duplicate `- loop:` id | Two loops sharing an explicit `id:` collide — iterations key by id and exports derive columns from it, so their data merges. Validator fires `duplicate-loop-id`. Every explicit loop id must be unique across the survey |
 | `- if: <expr>` as a sibling list item with no children indented under it | `- if <expr>:` flow-block form with children at +4 indent (§6.4 / #61). For "should this iteration run at all," use `options.from:` on the loop instead |
@@ -80,7 +87,6 @@ These are the most common style violations across surveys. If an edit touches an
 | Multi-paragraph `text:` field with bare newlines between paragraphs | Insert `<br><br>` — the platform doesn't render plain newlines |
 | Bold/italic/underline from the source docx dropped during conversion | Capture `<b>` / `<i>` / `<u>` runs from the docx and emit inline (§19) |
 | `options.from: \|` followed by multi-line code | `options.from:` is a one-liner: either a direct accessor (`QBrand.selected`) or a helper call (`myFilterRows()`). If logic needs more than one expression, name it: define a helper in a `- script:` block and reference it by name. Keeps the question block scannable |
-| `continue` or `break` inside `for` / `while` (Python subset blocks them) | Invert the predicate and put the body inside an `if not …:`. e.g. `if c == 8: continue; rows.append(c)` → `if c != 8: rows.append(c)`, or use a `suppress = …` flag and gate the append |
 | `style: image_cards` (snake_case) on `single` / `multi` | Style names are camelCase: `style: imageCards`. The snake_case form is rejected by the validator; the camelCase form is accepted by both validator and renderer (§4) |
 | `exclusive: True` on a `single` option | Multi-only. `single` already enforces one-selection; an exclusive PNTA is just `anchor: True` (§3.8) |
 | `label.prefix:` / `label.suffix:` on an `openList` option entry | Not valid on openList entries. Bake the prefix into the row's `label:` directly, or set affixes at question level (§3.8) |
@@ -90,7 +96,8 @@ These are the most common style violations across surveys. If an edit touches an
 | Branching on an opt-out via `Q.selected.any([99])` after upgrading to `isolate: True` | `.selected` **excludes** isolate codes. For simple "did they answer?" gates, `Q.answered` returns True whether the respondent gave a real answer or picked the opt-out — that's usually all you need. Migrate any legacy `.selected.any([<optOutCode>])` branches when you convert an opt-out to `isolate: True`. Only reach for a dedicated opt-out accessor when a downstream flow needs to distinguish "answered normally" from "opted out" — and check the current runtime API for the name |
 | Re-authoring order mirroring with a shuffle helper or a second `random`-mode question so a **loop** iterates in the parent's shown order | `order:` + `scale.order:` accept an **expression** (engine v3.38.0+). On a **loop**: `options.from: QBrand.selected` + `order: QBrand.all` iterates picked brands in the order the respondent saw them. Same shape for `block.order:` imposing a stored `[2,4,1,3]` sequence. **Scope limit** — on a question-level `options.from:` subset (`multi` / `single` / `rank` / `openList` / `numberList` / grid rows) the piped subset already **auto-inherits** the parent's shown order (v3.38.0 behavior-change); adding `order: Q.all` there is redundant — leave it off. (§3.6) |
 | Adding `order: Q.all` to a question whose `options.from:` already pipes from the parent | Redundant with v3.38.0 auto-inheritance — the engine produces an identical sequence either way. Keep `order:` expression form on **loops** (iteration order) and **blocks** (child-block sequence); drop it on question-level piped subsets so the question block stays scannable. (§3.6) |
-| `quota(group, code).fill()` in a script (used to be the manual single-cell increment) | Removed. The engine auto-fills cells on `endSurvey("complete")`. Author scripts should only READ from `quota(...)` (`.isOpen`, `.count`, `.target`, `.remaining`) and terminate with `endSurvey("quotafull")` when the target cell is full. See §15 |
+| `quota(group, code).fill()` in a script (used to be the manual single-cell increment) | Removed. The engine auto-fills cells on `endSurvey("complete", CompletePage)`. Author scripts should only READ from `quota(...)` (`.isOpen`, `.count`, `.target`, `.remaining`) and terminate with `endSurvey("quotafull", QuotaFullPage)` when the target cell is full. See §15 |
+| `endSurvey("terminate")` on its own — no page, no redirect (refused at publish from engine v3.45.0), or relying on "the question written after the script" as the closing page | Name the end page: `endSurvey("terminate", TermPage)`, and / or put `redirectUrl("https://…")` on the next line. The page is a `type: info` question, usually at the bottom of the file. See §6.7. |
 
 If an edit touches any of these surfaces, run the lint workflow in §0.2 **before** declaring the task done.
 
@@ -109,10 +116,12 @@ The linter enforces the §0 hard rules and the §0.1 bright-line style list — 
 surfaces that cause the most real-world breakage: tabs / non-4-space indentation,
 non-numeric or negative option codes, `true`/`false` instead of `True`/`False`,
 inline `{k: v}` options, underscored qids / ids / list names, `Q.any(` without
-`.selected`, `label.prefix`/`suffix` misuse, ternaries in `script:` / `validation:` /
-`if:` predicates, `style: dropdown` on `gridSingle`, snake_case `style:` names,
-`questions:` on a `- loop:`, multi-line `options.from:`, `continue` / `break` in
-scripts, and duplicate qids / loop ids.
+`.selected`, `label.prefix`/`suffix` misuse, `style: dropdown` on `gridSingle`,
+snake_case `style:` names, `questions:` on a `- loop:`, multi-line `options.from:`,
+duplicate qids / loop ids, an `endSurvey(...)` with neither an end page nor a
+`redirectUrl(...)` on the next line (§6.7), and the script-language removals of engine v3.44.0:
+`#[[ … #]]` block comments, `//`, f-strings, `%` / `.format()` text formatting,
+`.answered == 0/1`, and backslash line continuation.
 
 > **Scope — style and structure, not deep semantics.** This is a *lint pass*,
 > deliberately not a full compile/validate. It catches the frequent, mechanical
@@ -159,7 +168,7 @@ The AI programmer supports prompts and content in any language (French, Spanish,
 **English-only (DSL is language-independent syntax):**
 - All keywords: `qid`, `type`, `single`/`multi`/`rank`/`open`/`number`/`openList`/`numberList`/`gridSingle`/`gridMulti`/`mixGrid`/`lookup`/`info`, `options`, `scale`, `group`, `text`, `title`, `instruction`, `required`, `min`, `max`, `exact`, `if`, `script`, `loop`, `block`, `page`, `note`, `lists`, …
 - Boolean literals: `True` / `False`
-- Runtime helpers and built-ins: `fail()`, `print()`, `endSurvey()`, `quota()`, `len`, `sum`, `avg`, `random.choice`, `re.fullmatch`, `math.floor`, `datetime.now`, …
+- Runtime helpers and built-ins: `fail()`, `print()`, `endSurvey()`, `quota()`, `len`, `sum`, `avg`, `random.choice`, `re.fullmatch`, `math.floor`, `datetime.today`, …
 - Python keywords: `if`, `elif`, `else`, `for`, `while`, `def`, `return`, `and`, `or`, `not`, `in`, `is`, …
 
 **Target language (whatever the programmer prompts in):**
@@ -359,11 +368,11 @@ When the qnr defines its own hidden-helper variables (the SHOPPER doc lists `HQD
 - Authors `if:` show-conditions, `validation: |` Python blocks, `script:` flow logic, screen-out termination, piping, masking via `options.from`/`scale.from`.
 - Authors `type: lookup` questions that **reference** an existing named list asset.
 - Authors `type: cbc` / `type: maxdiff` conjoint questions **in full**, referencing an uploaded design by name (§2.1).
-- Calls `endSurvey("terminate")` for screen-outs and `endSurvey("complete")` at the end of qualifying paths.
+- Ends the survey with a named end page (§6.7): `endSurvey("terminate", TermPage)` for screen-outs, `endSurvey("quotafull", QuotaFullPage)` at a full quota, `endSurvey("complete", CompletePage)` at the end of qualifying paths — and authors those end pages.
 - Writes a `- note: |` `delta-log` block at the bottom flagging every assumption and every wizard handoff.
 
 **Human programmer does (NOT the AI programmer — leave stubs and flag in delta-log):**
-- **Quota cell definitions** — created via the Quota Builder UI. AI marks which questions feed quotas, inserts `endSurvey("complete")`, and (when applicable) **authors the least-fill assignment script that reads from the quota** (§16.10). AI names the required quota group in a comment directly above the script so the human knows what to build. AI does **not** generate the cell tables themselves.
+- **Quota cell definitions** — created via the Quota Builder UI. AI marks which questions feed quotas, inserts `endSurvey("complete", CompletePage)`, and (when applicable) **authors the least-fill assignment script that reads from the quota** (§16.10). AI names the required quota group in a comment directly above the script so the human knows what to build. AI does **not** generate the cell tables themselves.
 - **Research module wizards** — `cardSort`, `textAnnotation`, `imageAnnotation`, `videoAnnotation`. Wizard-configured. AI inserts a stub `- qid:` with `type:` and `text:` only.
 - **Conjoint design uploads** — uploading the CBC / MaxDiff design file in Assets → Designs. There is **no CBC or MaxDiff wizard**: AI authors the `cbc` / `maxdiff` question in full (§2.1) and flags the design name the file must be uploaded under.
 - **Lookup list data uploads** — uploading the `.json` / `.csv` to the lookup server. AI authors against the named list and flags the expected list name + columns.
@@ -389,6 +398,8 @@ A `.yml` file is a sequence of **top-level blocks**, each starting with `- ` at 
 | `- script: \|` | Free-standing Python-subset code. |
 | `- note: \|` | Author comment. Ignored by all evaluators. |
 | `- lists:` | Reusable named option/scale/group domains. **Place at the bottom of the file.** |
+
+The **end pages** — the `type: info` questions a script names when it ends the survey (`TermPage`, `QuotaFullPage`, `CompletePage`; §6.7) — go together just above `- lists:`. They are ordinary `- qid:` blocks, but the survey never walks through them: each is shown only to a respondent whose survey ended on it.
 
 There is **no `- survey:` wrapper** — the file *is* the survey.
 
@@ -1035,6 +1046,8 @@ The base list stays clean (5 real options); `QDigital` gets the opt-out. Other c
 
 ### 5.6 Error messages — **always** route through a hidden `QErrMsg` multi
 
+> **A message that includes a number worked out in the validation** ("You have 85.") keeps its static sentence in the bank and adds the piped part in the call: `fail(QErrMsg.row(6).label + " You have {{ total }}.")`. The variable exists only inside the validation, so `{{ total }}` cannot be written in the bank's option label (§9).
+
 **House standard:** every `fail(...)` call uses the `QErrMsg.row(N).label` pattern. Never inline literal strings inside `fail("...")`. The message goes in a reusable `errMessages` list referenced by a hidden `QErrMsg` multi; `fail()` pipes the label by code.
 
 **Why:** every error string is a translation target. Hunting strings across dozens of `validation:` blocks at translation time is painful and error-prone. Centralising them in one list means the translator works in one place, the copy reviewer works in one place, and changing wording is one edit.
@@ -1136,7 +1149,7 @@ For sequential questions sharing the same condition, use a `- if <expr>:` flow b
 - page:
     id: brandChapter
     title: Brand impressions
-    if: QSegment.value == "engaged"
+    if: QSegment.value == 1
     - page:
         id: brandApple
         title: Apple
@@ -1183,6 +1196,7 @@ Allowed children: `question`, `page`, `block`, `loop`, `if`/`elif`/`else`. **`sc
 ```yaml
 - loop:
     id: brandLoop
+    options: brandList
     options.from: QBrand.selected
     - qid: QRating
         type: number
@@ -1281,6 +1295,7 @@ q("Q1Concept", c).set(Q1.value)
 ```yaml
 - loop:
     id: conceptLoop
+    options: conceptList
     options.from: hConcept.selected
     - qid: Q1
         type: single
@@ -1316,11 +1331,8 @@ Use the post-loop `Q1_[c]` form (see Cross-iteration access above) only when the
 
 ```yaml
 - if QAge.value < 18:
-    - qid: QMinorScreenout
-        type: info
-        text: Thanks for your interest. This survey is for adults only.
     - script: |
-        endSurvey("terminate")
+        endSurvey("terminate", TermPage)     # TermPage is an end page — §6.7
 - elif QAge.value >= 65:
     - qid: QSeniorIntro
         type: info
@@ -1381,12 +1393,13 @@ Top-level executable Python-subset block. Use for derived flags, prefilling hidd
 ```yaml
 - script: |
     # Terminate under-18s and tag the spender segment for downstream routing.
+    # hSegment is a hidden single: 1 = premium, 2 = standard (codes are numbers).
     if QAge.value < 18:
-        endSurvey("terminate")
+        endSurvey("terminate", TermPage)     # names its end page — §6.7
     if QSpend.value > 100:
-        hSegment.set("premium")
+        hSegment.set(1)
     else:
-        hSegment.set("standard")
+        hSegment.set(2)
 ```
 
 #### Scripts execute on traversal — placement IS timing
@@ -1400,7 +1413,7 @@ This makes placement semantic, not stylistic. **A script must sit between its in
 | **Punches a hidden question** from previous selections (or any source) | **Immediately BEFORE the hidden question's definition.** Define the hidden destination right after its punch — the script writes, the destination follows, and the pair is co-located. |
 | **Derives a value from a recently-answered question** (`hRaceRecode` from `Race`, `hSegment` from `QAge` × `QSpend`) | **Between the source and the destination** — after every source question, before the destination hidden helper. |
 | **Defines a masking helper** used by `options.from:` / `scale.from:` / `if:` | **Immediately BEFORE the consuming question.** The helper must be `def`'d before traversal hits the consumer's `options.from:`. |
-| **Routes the flow** (`endSurvey("terminate")`, `endSurvey("complete")`, a branch flag the next `- if:` reads) | **At the routing point** — the document position where the route is taken. |
+| **Routes the flow** (`endSurvey("terminate", TermPage)`, `endSurvey("complete", CompletePage)`, a branch flag the next `- if:` reads) | **At the routing point** — the document position where the route is taken. |
 | **Function definition only** (a `def` with no side effects at definition time) | Anywhere **before first call**. Function defs register callability rather than executing, so they're the only scripts whose placement isn't tied to traversal order. Co-locate with the first caller anyway when convenient. |
 
 **Implication for hidden helper layout.** Hidden questions that get punched live **next to their punch script**, not clumped at the top of the file. The top-of-file cluster is reserved for hidden questions with **no punch script** — pure lookup / pipe tables like an `errMessages` bank or a long-form label list. Those are data, not state; they don't need a traversal point to be useful.
@@ -1465,8 +1478,8 @@ This makes placement semantic, not stylistic. **A script must sit between its in
 
 - qid: HabitFreq
     type: gridSingle
-    if: len(habit_screen_rows_qualifying()) > 0
-    options.from: habit_screen_rows_qualifying()
+    options: habitList
+    options.from: habit_screen_rows_qualifying()   # nothing qualifying → the question is skipped by itself
     ...
 ```
 
@@ -1487,7 +1500,7 @@ This makes placement semantic, not stylistic. **A script must sit between its in
 
 - script: |
     # Punch hSegment — but anything BETWEEN the top definition and this script
-    # that reads hSegment.value sees null.
+    # that reads hSegment.value sees None (unanswered).
     if QSpend.value > 100:
         hSegment.set(1)
     else:
@@ -1518,9 +1531,93 @@ Every `- script: |` block must lead with at least one `#` comment explaining **w
     Wave 4 mirror of W3 — verify retailer list before fielding.
 ```
 
+Free text, ignored by every evaluator — nothing inside it is read as code or piping. This is also the **long-comment form**: there is no block comment in the DSL (`#[[ … #]]` was removed in engine v3.44.0), so a remark longer than a few `#` lines goes in a `- note: |` between blocks.
+
 Always used at the **bottom of every authored `.yml` file** for the delta-log (§19).
 
 ---
+
+### 6.7 Ending the survey — `endSurvey` names its end page
+
+A script ends the survey with `endSurvey(outcome, Page)`. **The page is named, never implied by position** — the engine does not show "the question written after the script" (engine v3.45.0).
+
+```yaml
+- qid: S3
+    type: single
+    text: How often do you buy packaged snacks?
+    required: True
+    options:
+        1: Weekly or more often
+        2: Monthly
+        3: Never
+
+- script: |
+    if S3.selected.any([3]):
+        endSurvey("terminate", TermPage)
+
+# … the rest of the survey …
+
+- script: |
+    endSurvey("complete", CompletePage)
+
+# ---- End pages: shown only to a respondent whose survey ended on them ----
+- qid: TermPage
+    type: info
+    text: Thank you for your interest. Unfortunately you do not qualify for this study.
+
+- qid: QuotaFullPage
+    type: info
+    text: Thank you for your interest. We already have enough responses from people like you.
+
+- qid: CompletePage
+    type: info
+    text: Thank you. Your answers have been recorded.
+```
+
+**The rules**
+
+| Rule | Detail |
+|---|---|
+| **Every `endSurvey` has a way out.** | It names an end page, or is followed on the **very next line** by `redirectUrl(...)`, or both. `endSurvey("terminate")` with neither is a publish error (`end-without-page`). |
+| **The end page is a `type: info` question.** | Not hidden (`visibility: hide` is refused), not any other type. Written as a bare name, no quotes: `endSurvey("terminate", TermPage)` — not `"TermPage"`. |
+| **One page, many endings.** | Ten terminate points name the same `TermPage`. Do not write one page per screen-out — it multiplies the translation work for identical text. Write a second page only when the brief gives a different closing text. |
+| **End pages are outside the flow.** | A page named by an `endSurvey` is never shown on the way through the survey, wherever it is written. Keep them together at the bottom, above `- lists:`. Do not put `if:` on them, and do not put them inside a `- loop:` or `- page:`. |
+| **Use the brief's wording.** | If the brief gives closing text for terminate / quota full / complete, use it verbatim. If it gives none, write the three neutral pages above and say so in the delta-log. |
+| **Outcome first, always.** | `"complete"`, `"terminate"` or `"quotafull"` — nothing else. |
+| **It does not stop the script.** | Lines after `endSurvey` in the same script still run. Make it the last statement on its path — followed only by its `redirectUrl(...)`. |
+
+**Sending the respondent back to a panel — `redirectUrl`**
+
+```yaml
+- script: |
+    if S3.selected.any([3]):
+        endSurvey("terminate", TermPage)
+        redirectUrl("https://panel.example.com/term?id=" + request.param("pid"))
+```
+
+| Written | What the respondent gets |
+|---|---|
+| `endSurvey("terminate", TermPage)` | The page. The survey is over. |
+| `endSurvey("terminate", TermPage)` then `redirectUrl(url)` | The page with a Continue button, which goes to the URL. |
+| `endSurvey("terminate")` then `redirectUrl(url)` | Straight to the URL, no page. |
+
+- `redirectUrl(...)` must be the statement **directly after** its `endSurvey` (same indentation). Anything in between, and the `endSurvey` is refused.
+- Write the URL in full, with `https://`. It is sent exactly as written — the platform adds nothing to it — so carry the panel's own id through with `request.param("…")` (§10.7).
+- Use redirect links only when the brief supplies them (one per outcome is usual). Never invent a panel URL; if the brief mentions redirects without giving the links, name the end page and flag the missing links with `!HUMAN` in the delta-log.
+
+**Never do this** — the position rule of older versions:
+
+```yaml
+# ❌ The info page is NOT the closing page. From engine v3.45.0 it is an ordinary
+#    question shown to everyone who reaches it, and the bare endSurvey is refused.
+- script: |
+    if QAge.value < 18:
+        endSurvey("terminate")
+
+- qid: QSorry
+    type: info
+    text: Sorry, you do not qualify.
+```
 
 ## 7. Lookup (`type: lookup`)
 
@@ -1597,9 +1694,9 @@ Plain text input; validates typed value against source but shows no picker. **Al
     source.display: zipcode
     source.matchOnly: True
 
-- if SZip.matched == False:
+- if not SZip.matched:
     - script: |
-        endSurvey("terminate")
+        endSurvey("terminate", TermPage)
 ```
 
 ### 7.5 Property reference
@@ -1636,22 +1733,29 @@ Transposed container. Parent declares the **shared row domain**; nested column q
     type: mixGrid
     text: Tell us about each brand
     options: retailBrands
+    options.from: QBrandsAware.selected        # optional — filters the ROWS
     columns:
-        - qid: QBrandFamiliarity
+        - qid: QBrandBest
             type: single
-            text: How familiar are you with {{ row.label }}?
-            options: agreementScale
+            title: Best overall                # one row picked down the column
+        - qid: QBrandFamiliarity
+            type: gridSingle
+            title: Familiarity                 # one scale point per row
+            scale: familiarityScale            # a named list, or an inline `scale:` block
+            scale.from: hLevels.selected       # optional — filters this column's SCALE
         - qid: QBrandRecommend
-            type: number
-            text: Likelihood to recommend (0–10)
+            type: numberList
+            title: Likelihood to recommend (0–10)
             min: 0
             max: 10
 ```
 
 Rules:
 - Shared rows come **only** from the parent `options:` / `options.from:` / `group:`. Do not re-author `options`/`group` on nested column qids.
-- Children allowed: `single`, `multi`, `rank`, `openList`, `numberList`, `gridSingle`. Plain `open`, plain `number`, and `gridMulti` are **rejected**.
+- Children allowed: `single`, `multi`, `rank`, `openList`, `numberList`, `gridSingle`. Plain `open`, plain `number`, and `gridMulti` are **rejected** — use `openList` / `numberList` for one text / number per row, and `gridSingle` (with its own `scale:`) for a rating per row.
 - `columns:` must contain at least one child.
+- **Filters (engine v3.44.0).** `options.from:` on the parent filters the rows of every column. `scale.from:` on a `gridSingle` column filters that column's scale. If the row filter leaves no rows, the whole grid is skipped; if a column's scale filter leaves nothing, that column is dropped and the others stay. Skipped parts export blank.
+- **Required columns are enforced.** A respondent cannot continue past a mixGrid with a required column left unanswered.
 
 ---
 
@@ -1680,7 +1784,7 @@ When the respondent picks Samsung at `QBrand`, they see: *"Tell us more about Sa
 | `{{ brandLoop.selectedLabel }}` | Current loop iteration's label |
 | `{{ QSat.row(2).selectedLabel }}` | A row's selected label inside a grid |
 | `{{ QErrMsg.row(1).label }}` | An option's label (e.g. error message bank) |
-| `{{ "%.2f" % QSpend.value }}` | Format spec |
+| `{{ round(QSpend.value, 2) }}` | Rounded to 2 decimals (`%` / `.format()` formatting is not supported — §10.2) |
 | `{{ round(QPercent.value * 100) }}` | Built-in arithmetic |
 | `{{ "there" if not QName.answered else QName.value }}` | Inline conditional |
 
@@ -1722,7 +1826,15 @@ When the respondent picks Samsung at `QBrand`, they see: *"Tell us more about Sa
             fail("Allocations must sum to 100. You have {{ total }}.")
 ```
 
-`{{ total }}` references the local Python variable computed inside the `validation:` block. Anything in scope when the helper runs — locals, hidden question values, `Q.*` accessors — is available inside `{{ }}`.
+`{{ total }}` references the local variable computed inside the `validation:` block. Anything in scope when `fail()` runs — the validation's own variables, hidden question values, `Q.*` accessors — is available inside `{{ }}`.
+
+**With the `QErrMsg` bank (§5.6):** keep the static sentence in the bank and add the piped part in the `fail()` call — the variable only exists inside the validation, so it cannot be piped from the option label itself:
+
+```python
+fail(QErrMsg.row(6).label + " You have {{ total }}.")    # ✓ static text from the bank, variable piped here
+```
+
+A `{{ total }}` written inside the `QErrMsg` option label is an `unknown-name` publish error. Pipes are checked like any other code (§10.0): an unknown name inside `{{ }}` blocks publish, in display text and in `fail()` messages alike.
 
 ### Auto-escaping in HTML contexts
 
@@ -1732,40 +1844,53 @@ Piped values are HTML-escaped automatically. A respondent who typed `<script>ale
 
 ## 10. The Python subset
 
-Used in `validation: |`, `if:`, `script: |`, `options.from:`, `scale.from:`, and inside `{{ }}` pipes.
+Used in `validation: |`, `if:`, `script: |`, `options.from:`, `scale.from:`, `order:`, and inside `{{ }}` pipes.
 
-**Comments are Python-inert everywhere.** `#` line comments and `#[[ … #]]` block comments are stripped by the parser before compilation, ignored by the validator's `{{ }}` piping check, and never block publish. This holds for:
+**The language is Python-based and strict (engine v3.44.0+).** Every piece of code is read by a real grammar and checked before publish. Anything the language does not explicitly support is an **error that blocks publish** — the platform never guesses what you meant and never silently ignores a line. Write only what this section lists. It is *based on* Python, not identical to it: `range` is inclusive, `round` rounds halves away from zero, and several Python features are deliberately left out (§10.2).
 
-- Full-line `# comment` in scripts, validation, options.from
-- Inline trailing `# comment` on `- if …:` / `- elif …:` / `- else:` flow headers (e.g., `- if Q.answered:  # only if answered`)
-- Inline trailing `# comment` on code lines inside `- script:` / `validation:`
-- `#` inside `{{ }}` display pipes — inert even if it looks like Python
+**Comments.** `#` starts a comment — a whole line, or the end of a code line. Nothing inside a comment is read: not code, not `{{ }}`. This holds in scripts, validation, flow headers (`- if Q.answered:  # only if answered`) and question properties.
 
-A `{{ Q.value }}` written INSIDE a `# comment` line is inert to the display-pipe validator (never fires unknown-object / empty-pipe). So write comments freely — they never break the survey.
+**There is no block comment.** `#[[ … #]]` was removed in v3.44.0 and is now an error (`block-comment-removed`). For several lines, put `#` on each line; for a longer remark between blocks, use `- note: |` (§6.6).
+
+### 10.0 The strict rules — read these first
+
+These are the rules the checker enforces on every line. Most publish errors on AI-written surveys come from this table.
+
+| Rule | ✗ Refused | ✓ Write |
+|---|---|---|
+| **A condition is a yes/no test.** Applies to `if` / `elif` / `while`, each side of `and` / `or` / `not`, a question's `if:`, and `- if …:` flow headers. A number, text or selection is not a test. | `if QAge.value:` · `if QBrands.selected:` · `if not request.param("src"):` · `if: 1` | `if QAge.answered:` · `if QBrands.selected.size > 0:` · `if request.param("src") == "":` · `if: 1 == 1` |
+| **`.answered`, `.notAnswered`, `.matched` are True / False.** Never compare them with a number. | `if Q1.answered == 1:` · `if: Q1.answered == 0` | `if Q1.answered:` · `if: not Q1.answered` |
+| **Like with like.** Numbers compare and combine with numbers, text with text. | `Q1.value == "2"` · `"Age: " + QAge.value` · `QAge.value.strip()` | `Q1.value == 2` · `"Age: " + str(QAge.value)` · `.strip()` only on text |
+| **Codes are numbers.** Option, row and scale codes are never quoted. | `Q1.set("2")` · `hSegment.set("premium")` · `hSegment.value == "premium"` | `Q1.set(2)` · `hSegment.set(1)` · `hSegment.value == 1` |
+| **Codes, rows and scale points must exist** on the question they are used with. | `Q1.set(9)` when `Q1` has options 1–5 · `QGrid.row(12)` · `Q1.selected.any([1, 9])` | Only codes the question declares |
+| **Text and lists are never `None`.** Unanswered text is `""`; nothing selected is an empty list. | `if QOpen.value is None:` · `if QBrands.selected is None:` | `if not QOpen.answered:` · `QOpen.value == ""` · `QBrands.selected.size == 0` |
+| **A write gives nothing back.** | `x = Q1.set(2)` · `x = items.append(3)` | The call on a line of its own |
+| **A line must do something.** | A bare `QAge.value + 1` on its own line | Store it, test it, or pass it on |
+| **One comparison at a time.** | `1 < x < 10` | `1 < x and x < 10` |
+| **A condition stays on one line.** No `\` continuation, no wrapping an `if` test across lines. | `if (a and b) \` ⏎ `or (c and d):` | Move the test into a `def` helper and call it (§11) |
+| **Masks and orders give codes.** `options.from:` / `scale.from:` / `order:` / `scale.order:` must work out to a list of the question's own codes, and may not change anything. | `options.from: QBrand.selected.size` · `options.from: QBrand.set(1)` | `options.from: QBrand.selected` · `options.from: helper()` |
+| **`fail()`, `endSurvey()` take what they document.** | `endSurvey("screenout")` · `endSurvey("terminate")` on its own | `endSurvey("terminate", TermPage)` — the outcome is only `"complete"`, `"terminate"` or `"quotafull"`, and it names an end page or is followed by `redirectUrl(...)` (§6.7) |
+
+**Unanswered answers — `None`.** A coded or numeric answer that has not been given is `None`: `single.value`, `number.value`, a grid or list row's `.value`. Testing it with `==`, `!=` or `in` is fine (the test is simply False). Doing **arithmetic** or **`<` `>` `<=` `>=`** with it is an error *when that line runs* — in a `validation:` the respondent gets a generic "problem checking this answer" message instead of yours; in a script the line fails and is logged. So before arithmetic or ordering on anything that might be unanswered, either gate on `.answered` or coalesce with `(x or 0)`:
+
+```python
+if QAge.answered and QAge.value < 18:        # gate
+    endSurvey("terminate", TermPage)
+total = total + (QAlloc.row(c).value or 0)   # coalesce — a blank row counts as 0
+```
+
+**`sum()`, `avg()`, `min()`, `max()` over a list pass over blank rows** (engine v3.44.1). `sum(Q.values)` adds the rows that were answered; `avg(Q.values)` is the mean of the answered rows (a blank is *not* counted as 0). With every row blank, `sum` is `0` and the other three give `None`. Written out with separate values (`max(a, b)`), a `None` is still an error.
+
+**A `validation:` also runs when the answer is blank.** On an optional question, start the test with `.answered` (`if QEmail.answered and not re.fullmatch(...)`) so a skipped question is neither failed nor read as `None`.
+
+The editor separately **warns** (it does not block) when a script reads a question that is asked *later* in the survey — the answer cannot exist yet. Writing forward with `.set(...)` is fine.
 
 ### 10.1 Control flow — supported
 
-`if` / `elif` / `else` (statement form, in scripts and validation), `for`, `while`, `def`, `try` / `except` / `finally`.
-
-**Inline conditional expression (`a if cond else b`) — piping only.** The ternary form is allowed inside `{{ ... }}` text piping (per `the bundled piping examples`) but **NOT** inside `- script:` / `validation:` / `if:` predicates. In script context, use a proper `if / else` block:
+`if` / `elif` / `else`, `for`, `while`, `break`, `continue`, `pass`, `def` / `return`, `try` / `except` / `finally`, and the inline conditional `a if cond else b`.
 
 ```python
-# ❌ Not allowed in scripts
-hQ7.set(1 if boxedEaten else 2)
-
-# ✅ Proper if / else
-if boxedEaten:
-    hQ7.set(1)
-else:
-    hQ7.set(2)
-
-# ✅ Inside piping — ternary IS allowed
-text: |
-    Hi {{ "there" if not QName.answered else QName.value }}, welcome back.
-```
-
-```python
-# if/elif/else
+# if / elif / else
 if QAge.value < 18:
     hAgeBand.set(1)
 elif QAge.value < 35:
@@ -1773,89 +1898,109 @@ elif QAge.value < 35:
 else:
     hAgeBand.set(3)
 
-# for with tuple unpacking
+# Inline conditional — allowed anywhere a value is: scripts, validation, .set(...), pipes
+hQ7.set(1 if QBoxed.value == 1 else 2)
+
+# for, with break / continue
+rows = []
+for code in QBrand.all:
+    if code == 97:
+        continue                # skip the "None" anchor
+    rows.append(code)
+
+# for with two names
 for index, code in enumerate(QBrand.selected):
     print(index, code)
 
-# def with defaults / *args / **kwargs
+# def — plain parameter names only (no default values, no *args / **kwargs)
 def is_premium():
     return QSpend.value > 100
 
-# try/except/finally
+# try / except / finally
 try:
-    QRank.set(rank_codes)
+    n = int(QCode.value)
 except Exception:
-    QRank.set([1, 2, 3])
+    n = 0
 ```
 
-`def`'d functions defined in one `- script:` are callable from every subsequent `- script:` and from inline `- if <expr>:` predicates.
+`def`'d functions defined in one `- script:` are callable from every subsequent `- script:`, from `- if <expr>:` predicates, and from `if:` / `options.from:` / `validation:`. `return` is only valid inside a `def`.
 
-### 10.2 Control flow — blocked
+Assign one value per line (`a = 1` then `b = 2`; `a, b = 1, 2` is refused). `+=` / `-=` are supported.
+
+### 10.2 Not part of the language
 
 | Construct | Use instead |
 |---|---|
-| List/dict/set comprehensions | Explicit `for` loop with `result.append(...)` |
-| Generator expressions | Explicit `for` loop |
-| `lambda` | Top-level `def` |
-| Decorators (`@something`) | Call the wrapper explicitly |
-| `class` definitions | Use a dict or top-level functions |
-| `with` statements | Runtime has no resources to manage |
-| `async` / `await` / `yield` | Synchronous logic only |
-| `break` / `continue` | Restructure with a flag or early `return` |
-| `//` floor division | `int(a / b)` or `math.floor(a / b)` |
-| f-strings (`f"..."`) | `"..." + str(x)` or `"%s" % x` (or use `{{ }}` in pipe-aware text) |
-| Walrus `:=` | Plain assignment then condition |
-| `import` (any) | The four safe modules below are pre-imported |
+| List / dict / set comprehensions, generator expressions | Explicit `for` loop with `result.append(...)` |
+| `lambda` | A `def` |
+| Decorators, `class`, `with`, `async` / `await` / `yield`, walrus `:=` | Plain functions and assignments |
+| `import` (any) | `math`, `random`, `re`, `datetime` are already there |
+| `//` floor division | `int(a / b)` |
+| f-strings (`f"..."`), `"%s" % x`, `"…".format(x)` | `"..." + str(x)` — or `{{ }}` in display text |
+| Default parameter values, `*args`, `**kwargs` | Plain parameters |
+| `a, b = 1, 2` (several values in one assignment) | One assignment per line |
+| Chained comparison `1 < x < 10` | `1 < x and x < 10` |
+| `switch` / `case`, `catch`, `else if`, backtick strings | `if` / `elif` / `else`, `except`, `elif`, `"…"` |
+| Block comments `#[[ … #]]` | `#` on each line, or `- note: \|` |
+| `\` line continuation; an `if` test wrapped across lines | One line, or a `def` helper |
+| Extra arguments on text methods (`s.split(",", 1)`) | `re.split(...)` |
+| A trailing comma on a statement (`x = 1,`); numbers with a leading zero (`03`) | `x = 1`; `3` |
+| `return` outside a `def` | Wrap the logic in a `def`, or use `if` / `else` |
 | File I/O / network | Sandboxed runtime |
-| `switch` | `if`/`elif`/`else` |
-| `s.replace(...)` | `re.sub(pattern, repl, s)` |
-| `s.split()` (no-arg or multi-arg) | `s.split(",")` requires exactly one separator; for advanced use `re.split()` |
 
 ### 10.3 Operators — supported
 
-Comparison `==` `!=` `<` `<=` `>` `>=`, boolean `and` `or` `not`, membership `in` `not in`, identity `is` `is not`, arithmetic `+` `-` `*` `/` `%` `**`, unary minus, indexing `x[0]` `x[-1]` `x[1:3]`, parentheses.
+Comparison `==` `!=` `<` `<=` `>` `>=`, boolean `and` `or` `not`, membership `in` `not in`, identity `is None` / `is not None`, arithmetic `+` `-` `*` `/` `%` `**`, unary minus, indexing `x[0]` `x[-1]` `x[1:3]`, parentheses.
 
-`/` is true division (always a float when both sides are int). For floor-division use `int(a / b)` or `math.floor(a / b)`.
+- `/` is true division: `7 / 2` is `3.5`. For a whole number use `int(a / b)`.
+- `+` adds numbers, joins text with text, and joins a list with a list. It never mixes a number with text — wrap the number in `str(...)`.
+- `%` is the numeric remainder only (`7 % 3`), not text formatting.
+- `a or b` as a **value** is allowed: `(QAge.value or 0)` gives `0` when unanswered.
+- Slices follow Python — the end position is **not** included: `"abcdef"[0:4]` is `"abcd"`. (Only `range` includes its end.)
 
 ### 10.4 Built-ins — pre-imported, no `import` needed
 
 ```python
 # Aggregate
-len(x)              # length of sequence / collection
-min(x)              # minimum
-max(x)              # maximum
-sum(x)              # sum
+len(x)              # length of text / list / selection
+min(x)              # minimum         (also min(a, b))
+max(x)              # maximum         (also max(a, b))
+sum(x)              # sum of a list   (also sum(a, b, …) over several lists)
 avg(x)              # mean (platform addition)
-sorted(x)           # new sorted list (key=, reverse= supported)
-range(start, end)   # iterable range — INCLUSIVE on both ends (different from Python)
+sorted(x)           # new sorted list (key=<def name>, reverse=True supported)
+range(start, end)   # INCLUSIVE on both ends — range(1, 3) is 1, 2, 3 (different from Python)
 enumerate(x)        # (index, value) pairs
 zip(a, b)           # parallel iteration
-any(x)              # True if any truthy
-all(x)              # True if all truthy
+any(x)              # True if any item is true
+all(x)              # True if all items are true
 
 # Constructors
 set([1, 2, 3])
 list(x)
-dict(...)
+dict()
 tuple(x)
 
 # Type conversion
-str(x)              # to string
-int(x)              # to int — strict, throws on bad input
-float(x)            # to float — strict, throws on bad input
-bool(x)             # Python-like truthiness
-isNumeric(x)        # platform: True if x parses as a number
-toNumeric(x)        # platform: coerce to number
-toInt(x)            # platform: coerce to int (strict)
-toString(x)         # platform: alias for str
-parseInt(x)         # platform: parse string as int (strict)
-parseFloat(x)       # platform: parse string as float (strict)
+str(x)              # to text
+int(x)              # to whole number — strict, fails on bad input
+float(x)            # to number — strict, fails on bad input
+bool(x)
+isNumeric(x)        # platform: True if the text x reads as a number
+toNumeric(x)        # platform: text to number
+toInt(x)            # platform: text to whole number (strict)
+toString(x)         # platform: same as str
+parseInt(x)         # platform: text to whole number (strict)
+parseFloat(x)       # platform: text to number (strict)
 
 # Math
 abs(x)
-round(x)            # half-away-from-zero
-round(x, n)
+round(x)            # halves round AWAY from zero: round(2.5) is 3, round(-2.5) is -3
+round(x, n)         # to n decimals: round(2.675, 2) is 2.68
 ```
+
+`sum` / `avg` / `min` / `max` over a list skip its blank rows (`None`); text in the list is an error. See "Unanswered answers" in §10.0.
+
+**There is no fixed-decimals formatting.** `round(x, 2)` rounds the number; `str(round(3.10, 2))` is `"3.1"`, not `"3.10"`. If the questionnaire needs a fixed number of decimals shown, add a `!HUMAN` line in the delta-log.
 
 ### 10.5 Safe modules — pre-imported
 
@@ -1863,12 +2008,16 @@ round(x, n)
 math.floor(x)
 math.ceil(x)
 math.sqrt(x)
+math.exp(x)
+math.log(x)
+math.pow(x, y)
 math.pi
 math.e
 
 random.choice([1, 2, 3])
-random.shuffle(my_list)         # in place
-random.randint(0, 10)           # int in [0, 10] inclusive
+random.shuffle(my_list)         # in place — on a line of its own
+random.sample(my_list, 2)       # 2 different items
+random.randint(0, 10)           # whole number in [0, 10] inclusive
 
 re.match(pattern, text)
 re.search(pattern, text)
@@ -1878,36 +2027,44 @@ re.split(pattern, text)
 re.findall(pattern, text)
 re.escape(s)
 
-datetime.datetime.now()
-datetime.date.today()
-datetime.timedelta(days=7)
+datetime.today()                # today's date — prints as "2026-11-19"
+datetime.now()                  # date and time — prints as "2026-11-19T10:51:58"
+datetime.today().year           # also .month, .day
+datetime.now().hour             # also .minute, .second (and .year / .month / .day)
+datetime.today().isoformat()    # the date as text
+datetime.date(2026, 1, 5)       # a date from its parts
 ```
 
 `random` produces respondent-specific results that won't reproduce on replay — gate treatment assignments behind a hidden flag so the same respondent doesn't re-randomise on navigation.
 
-`re.fullmatch` (not `re.match`) is the right choice for validation regex — it anchors both ends.
+`re.fullmatch` (not `re.match`) is the right choice for validation regex — it anchors both ends. Test a match with `is not None`; read the matched text with `.group(n)` (also `.groups()`, `.start()`, `.end()`), or use `re.findall(...)`.
 
-### 10.6 String methods — supported
+**Dates are deliberately small** (engine v3.44.1). A date has `.year`, `.month`, `.day` and `.isoformat()`; a date-and-time adds `.hour`, `.minute`, `.second`. The parts are values (no brackets); `.isoformat()` is a function. Python's longer spellings `datetime.date.today()` and `datetime.datetime.now()` also work. There is **no `datetime.timedelta`** and no date arithmetic — work with the parts (`datetime.today().year - QBirthYear.value`). Nothing else exists on a date (`.weekday()`, `.strftime()` … are refused).
 
-`.strip()`, `.lower()`, `.upper()`, `.startswith(s)`, `.endswith(s)`, `.split(sep)` (one separator argument required), `s in s2`, `len(s)`. Slice/index supported.
+### 10.6 Text methods — supported
 
-Blocked: `.replace(...)` → use `re.sub(pattern, repl, s)`.
+`.strip()` / `.lstrip()` / `.rstrip()`, `.lower()`, `.upper()`, `.startswith(s)`, `.endswith(s)`, `.split()` (on spaces) or `.split(sep)`, `sep.join(list)`, `.replace(old, new)` (every occurrence), `.find(text)` (position, `-1` when absent), `s in s2`, `len(s)`, index and slice (`s[0]`, `s[-1]`, `s[1:3]`).
+
+Each takes exactly the arguments shown — an extra argument is an error, not ignored. No other text methods exist (no `.format`, `.title`, `.count`, …).
+
+Text is written in `"double"` or `'single'` quotes. Raw text `r"\d{5}"` is supported — use it for regex patterns so backslashes are kept as written.
 
 ### 10.7 Runtime helpers
 
 | Helper | Usage |
 |---|---|
-| `fail(message)` | Inside `validation:` — reject the answer with a custom message. **Single argument.** Pipe-aware via `{{ }}`. |
-| `print(message)` | Inside `- script:` — diagnostic output. Pipe-aware. |
-| `endSurvey(outcome)` | Inside `- script:` — terminate with `"complete"` / `"terminate"` / custom outcome. |
+| `fail(message)` | Inside `validation:` — reject the answer with a message. Pipe-aware via `{{ }}`: the message can read the validation's own variables (`fail("You have {{ total }}.")`) and any accessor. An unknown name inside the `{{ }}` is a publish error. |
+| `print(message)` | Inside `- script:` — diagnostic output. |
+| `endSurvey(outcome, Page)` | Inside `- script:` — end the survey on the end page it names (§6.7). The outcome is exactly `"complete"`, `"terminate"` or `"quotafull"`; `Page` is the bare name of a `type: info` question. The page may be left out only when `redirectUrl(...)` is the next line. **It does not stop the script** — lines after it in the same script still run — so make it the last statement on its path (inside `if` / `else`, or at the end). |
+| `redirectUrl(url)` | Inside `- script:`, on the line directly after `endSurvey(...)` — send the respondent to `url` (after the end page, if one was named). The URL is text, written in full with `https://`, and is sent exactly as written (§6.7). |
 | `quota("groupId", cellCode)` | Read a quota cell's current state. Rare in author code; quota cells are configured by the human in the Quota Builder. |
-| `q(baseName)` / `q(baseName, code)` | Dynamic qid lookup — returns the question proxy for `baseName` or `baseName + code` (see §10.8). Returns `null` if no proxy is registered under that name. |
-| `request.url` | Current URL string. |
-| `request.param("key")` | Query-string parameter value. **Returns `""` for missing keys, never `None`.** |
+| `q(baseName)` / `q(baseName, code)` | Dynamic qid lookup — the question named `baseName`, or `baseName + code` (see §10.8). |
+| `request.url` | Current URL, as text. |
+| `request.param("key")` | Query-string parameter, as text. **Gives `""` for a missing key, never `None`.** Test with `== ""` / `!= ""`. |
 
 ### 10.8 `q()` — dynamic qid lookup
 
-`q(baseName)` returns the runtime proxy for the question with that qid. `q(baseName, code)` **concatenates `code` onto `baseName` (no separator inserted)** and looks up the combined name. Both return `null` if no question is registered under the resulting name.
+`q(baseName)` returns the runtime proxy for the question with that qid. `q(baseName, code)` **concatenates `code` onto `baseName` (no separator inserted)** and looks up the combined name. The checker cannot see a name you build at run time, so a wrong name is **not** a publish error: it gives an empty, unanswered placeholder and the write goes nowhere. Double-check every computed name against the real qids.
 
 **Use it when the qid is a string you compute at runtime.** For literal qids and for the standard loop cross-iteration access, the bare-name and bracket forms are cleaner.
 
@@ -1949,26 +2106,24 @@ The underscore is **part of the loop-iteration naming convention**, not somethin
 ### 10.9 Defensive idioms
 
 ```python
-# Unanswered numeric → coalesce to 0
+# Unanswered numeric → coalesce to 0 before arithmetic
 total = (QAge.value or 0) + (QPartnerAge.value or 0)
 
-# Early exit when an upstream answer is missing
-if not QSpend.answered:
-    hSpendBand.set(0)
-    return  # only valid inside def
-# ... arithmetic that assumes QSpend has a value ...
+# Gate on .answered before comparing with < or >
+if QSpend.answered and QSpend.value > 100:
+    hSpendBand.set(2)
+else:
+    hSpendBand.set(1)
 
-# Empty-string check on request params (don't compare against None)
+# Missing request parameter — it is "" (never None), and text is not a yes/no test
 if request.param("source") == "":
     hSourceMissing.set(1)
-# Or shorter:
-if not request.param("source"):
-    hSourceMissing.set(1)
 
-# Safe numeric validation — guard before strict conversion
-if QAge.value.strip() != "" and not isNumeric(QAge.value):
+# Number typed into an `open` question — check before converting
+# (QAgeText is type: open; on a type: number question .value is already a number)
+if QAgeText.value.strip() != "" and not isNumeric(QAgeText.value):
     fail("Enter a valid number.")
-elif isNumeric(QAge.value) and toNumeric(QAge.value) < 18:
+elif isNumeric(QAgeText.value) and toNumeric(QAgeText.value) < 18:
     fail("Must be 18 or older.")
 ```
 
@@ -2033,14 +2188,19 @@ elif isNumeric(QAge.value) and toNumeric(QAge.value) < 18:
 
 ### Absence semantics
 
-| Accessor kind | When unanswered |
-|---|---|
-| coded scalar (`single.value`, `gridSingle.row(n).value`) | `null` |
-| numeric (`number.value`) | `null` |
-| text (`open.value`) | `""` |
-| collection (`multi.selected`, `rank.values`) | empty collection |
-| missing rank slot | `null` |
-| `request.param(...)` missing key | `""` (never `None`) |
+| Accessor kind | When unanswered | Test it with |
+|---|---|---|
+| coded scalar (`single.value`, `gridSingle.row(n).value`) | `None` | `.answered`, `== code`, `(x or 0)` |
+| numeric (`number.value`, `numberList.row(n).value`) | `None` | `.answered`, `(x or 0)` |
+| text (`open.value`, `openList.row(n).value`) | `""` — never `None` | `.answered`, `== ""` |
+| collection (`multi.selected`, `rank.values`) | empty collection — never `None` | `.size == 0`, `.answered` |
+| list of row values (`numberList.values`, `gridSingle.values`) | a list with `None` for each blank row | `sum()` / `avg()` / `min()` / `max()` skip the blanks |
+| missing rank slot | `None` | |
+| `request.param(...)` missing key | `""` (never `None`) | `== ""` |
+
+`None` is safe in `==` / `!=` / `in` (the test is False) but **not** in arithmetic or `<` `>` — that is a runtime error (§10.0 "Unanswered answers"). Writing `is None` on a text answer or a collection is a publish error, because it can never be true.
+
+**A masked question with nothing to show is skipped, and its data is blank.** When `options.from:` / `scale.from:` works out to an empty list (or fails), the engine skips the question by itself — no `if:` guard is needed — and every column of that question exports blank (not 0). In data: ticked = 1, shown but not ticked = 0, never shown = blank.
 
 ### Collection / Set ops
 
@@ -2053,66 +2213,48 @@ Membership: `code in Q.selected`, `code not in Q.all`. Build a fresh set with `s
 
 **Deprecated — never use:** `.contains(...)`, `.has_any(...)`, `.has_all(...)`, `.iter`, `.iteration`, `.labels` on a question (use `selectedLabel`/`selectedLabels`/`allLabels`).
 
-### Fluent vs write-terminal mutation methods
+### Methods that give a result vs methods that only change something
 
-DSL mutation methods split into two categories. The split matters: mixing them up silently produces a `None` variable that crashes on the next use, and the validator now fires diagnostics for the wrong form.
+Some methods hand back a new value you can store or chain; others only make a change and give **nothing** back. Storing the result of the second kind (`x = Q1.set(2)`) is a publish error (`no-value`).
 
-#### Fluent methods — return `self` or a new object (safe to chain / assign)
+#### Give a result — safe to store or chain
 
-| Receiver | Fluent methods |
+| Receiver | Methods |
 |---|---|
-| `collection` (`Q.all`, `Q.selected`, `Q.values`, `Q.allLabels`, `Q.selectedLabels`, `Q.records`) | `.add(codes)`, `.remove(codes)`, `.intersect(codes)`, `.union(codes)`, `.minus(codes)` |
-| `setobj` — a constructed `set([...])` | `.add(codes)`, `.remove(codes)`, `.discard(codes)`, `.clear()` |
-| `list` | `.append(x)`, `.extend(iterable)`, `.remove(x)`, `.sort()`, `.clear()` |
-| `dict` | `.set(key, value)` |
-
-Because these return `self` or a new collection, **chaining and result capture are both valid**:
+| A survey collection (`Q.all`, `Q.selected`, `Q.values`, `Q.allLabels`, `Q.selectedLabels`, `Q.records`) | `.add(codes)`, `.remove(codes)`, `.intersect(codes)`, `.union(codes)`, `.minus(codes)` — each returns a **new** collection; the answer itself is not changed |
+| Text | every text method in §10.6 |
+| `dict` | `.get(key, default)`, `.keys()`, `.values()`, `.items()`, `.has(key)` |
 
 ```python
-s = S2.all.remove(3).add(5)        # ✓ fluent chain — s is the modified set
-filtered = items.remove(99)        # ✓ result is the modified collection
-return set(currently_used()).add([97, 98])   # ✓ canonical multi-add idiom (§11 above)
+shown = QBrand.all.minus([97])                 # ✓ new collection
+extra = QBrand.selected.add([97, 98])          # ✓ several codes at once — codes must exist on QBrand
 ```
 
-#### Write-terminal methods — always return `None` (never chain or capture)
+#### Only change something — call on a line of their own
 
-| Receiver | Write-terminal methods |
+| Receiver | Methods |
 |---|---|
-| Any question proxy — bare qid (`Q1`), `q(...)`, row accessor (`Q.row(c)`) | `.set(payload)`, `.reset()` |
-| `quota(group, code)` | **Read-only from scripts.** `.isOpen`, `.count`, `.target`, `.remaining` — no write method. The engine auto-fills cells on `endSurvey("complete")`. `.fill()` was removed (double-counted with the auto-fill path). See §15. |
-
-These mutate state and discard the return value:
+| Any question proxy — bare qid (`Q1`), `q(...)`, a row (`Q.row(c)`) | `.set(payload)`, `.reset()`, `multi.add(code)` |
+| A plain `list` you built (`rows = []`) | `.append(x)`, `.extend(list)`, `.remove(x)`, `.sort()`, `.clear()` |
+| A plain `dict` you built | `d[key] = value`, `.set(key, value)`, `.update(other)`, `.clear()` |
+| `quota(group, code)` | **Read-only from scripts.** `.isOpen`, `.count`, `.target`, `.remaining` — no write method. The engine auto-fills cells on `endSurvey("complete", CompletePage)`. See §15. |
 
 ```python
-Q1.set(2)                          # ✓ correct — on its own line
-Q1.reset()                         # ✓ correct
+Q1.set(2)                          # ✓ on its own line
+rows.append(97)                    # ✓ on its own line
+rows.extend([97, 98])              # ✓ add several codes to a list you built
 
-x = Q1.set(2)                      # ✗ wrong — x is None, validator fires
-y = Q1.reset()                     # ✗ wrong — y is None
-chain = Q1.set(2).reset()          # ✗ wrong — chain fails on the second call
+x = Q1.set(2)                      # ✗ publish error `no-value` — nothing to store
+kept = rows.remove(99)             # ✗ same
+Q1.set(2).reset()                  # ✗ nothing to chain on
 ```
 
-`quota(...)` has no write method — the engine handles cell increments on `endSurvey("complete")`. See §15.
-
-**Why the same name `.set()` is fluent on dict and write-terminal on a question:** receiver matters. `someDict.set("k", "v")` returns the dict (fluent — capture if you want). `Q1.set(2)` returns `None` (write-terminal — don't capture). The validator is receiver-aware and tells them apart by knowing the qid registry.
-
-#### Validator diagnostics
-
-| Diagnostic code | Fires when |
-|---|---|
-| `question-write-assign` | The result of `.set()` / `.reset()` on a known qid (or `q(...)` proxy, or `Q.row(c)` accessor) is assigned to a variable. |
-| `none-returning-method-assign` | A method known to return `None` regardless of receiver is assigned. Currently empty — the receiver-aware check above handles all known write-terminal cases. |
-
-**False positives explicitly avoided** — the validator does NOT fire on:
-
-- `s = someDict.set(k, v)` — receiver is not a known qid
-- `s = S2.all.remove(3)` — `.remove()` on a collection is fluent, not write-terminal
-- `out = set([1, 2]).add([3, 4])` — `.add()` on a set object is fluent
+**Adding several codes to a list you built: use `.extend([...])`.** Do not write `set(rows).add([97, 98])` — on a constructed set, `.add` takes **one** value, so the list goes in as a single nested item and the mask silently loses both codes. `set(...)` is for removing duplicates and for `in` tests; `.add(x)` on it adds one value.
 
 #### Quick decision rule
 
-If the receiver is a **question proxy** or **`quota(...)` call** → method mutates state, returns `None`, call on its own line.
-If the receiver is a **collection / set / list / dict** → method is fluent, returns the result, capture or chain freely.
+A **question** or a **list / dict you built** → the method changes it and gives nothing back; call it on its own line.
+A **survey collection** (`Q.selected`, `Q.all`, …) or **text** → the method returns a new value; store it or chain it.
 
 ### Authoring style — prefer accessors over raw iteration
 
@@ -2126,36 +2268,32 @@ for c in Device.all:
 if t != 100:
     fail(QErrMsg.row(6).label)
 
-# ✅ Idiomatic — sum() over the .values accessor.
+# ✅ Idiomatic — sum() over the .values accessor. A blank row is passed over.
 if sum(Device.values) != 100:
-    fail(QErrMsg.row(6).label)
+    fail(QErrMsg.row(6).label + " You have {{ sum(Device.values) }}.")
 ```
 
 A few patterns worth knowing:
 
 | Goal | Accessor form |
 |---|---|
-| Sum a `numberList`'s row values | `sum(Q.values)` |
-| Average a `numberList`'s row values | `avg(Q.values)` |
+| Sum a `numberList`'s row values | `sum(Q.values)` — blank rows are passed over |
+| Average a `numberList`'s row values | `avg(Q.values)` — mean of the answered rows; `None` when none is answered |
 | Count selections on a `multi` | `Q.selected.size` |
 | Membership test (single or multi) | `Q.selected.any([codes])` — **always go through `.selected`**, even on `single` questions. `.any(code)` is a shorthand for one code. `code in Q.selected` reads naturally for one code too. `Q.value == N` still works on `single` for a single code; for two-or-more codes, prefer `Q.selected.any([N1, N2])` over a chain of `or`s — easier to extend, easier to read. **There is no `Q.any(...)` form** — `.selected` is required, mirrors are not valid. |
 | All of these codes selected? | `Q.selected.every([codes])` |
 | Set difference | `Q.selected.minus([codes])` |
-| Set union (add multiple codes at once) | `Q.selected.add([codes])` / `set([...]).add([codes])` |
-| Get a row's value defensively | `Q.row(code).value or 0` (None → 0) |
-| Check answered before reading | `Q.answered` (don't compare value to None) |
+| Add several codes at once | `Q.selected.add([codes])` on a survey collection; `rows.extend([codes])` on a list you built |
+| Get a row's value defensively | `(Q.row(code).value or 0)` (None → 0) |
+| Check answered before reading | `Q.answered` (it is True / False — never `== 1`) |
 
-**Multi-add idiom.** When you'd otherwise call `.append(x)` two or more times in a row to extend a code list, use the set object's `.add([codes])` method to add them in one shot. Personal style varies — appending is fine for a single code — but for more than one code, batching reads cleaner and signals intent:
+**Multi-add idiom.** When you'd otherwise call `.append(x)` two or more times in a row to extend a code list, add them in one shot with `.extend([codes])`:
 
 ```python
-# ❌ Two appends in a row
-result = currently_used_svods()
-result.append(97)
-result.append(98)
-return result
-
-# ✅ Single .add over a set
-return set(currently_used_svods()).add([97, 98])
+def svods_plus_anchors():
+    result = currently_used_svods()
+    result.extend([97, 98])        # one line instead of two appends
+    return result
 ```
 
 **Prefer `range(a, b)` over enumerated code lists when the codes are contiguous.** Spelling out `[1, 2, 3, 4, 5, 6, 7]` is verbose and fragile — a programmer can quietly skip or repeat a code and corrupt the survey path. `range(1, 7)` (inclusive both ends in this DSL) is unambiguous and survives renumbering.
@@ -2163,13 +2301,13 @@ return set(currently_used_svods()).add([97, 98])
 ```python
 # ❌ Enumerated — easy to miscopy "5" twice or skip "4"
 if Q1.selected.any([1, 2, 3, 4, 5, 6, 7]):
-    ...
+    hFlag.set(1)
 for code in [1, 2, 3, 4, 5, 6, 7]:
     inputs.append(Q1.row(code).value)
 
 # ✅ range() — single source of truth for the bound
 if Q1.selected.any(range(1, 7)):
-    ...
+    hFlag.set(1)
 for code in range(1, 7):
     inputs.append(Q1.row(code).value)
 ```
@@ -2179,9 +2317,9 @@ Use enumerated lists only when the codes are **non-contiguous** (e.g. `[1, 2, 3,
 **Extract a helper function when a boolean expression spans more than two rows / accessors.** A chain of `Q.row(1).selected.any([3]) or Q.row(2).selected.any([3]) or Q.row(3)...` is hard to read, hard to maintain, and hard to spot a missing row in. Loop instead:
 
 ```python
-# ❌ Long disjunction — fragile and unreadable
+# ❌ Long disjunction — fragile and unreadable (and a condition cannot be wrapped onto a second line)
 if Q6.row(1).selected.any([3]) or Q6.row(2).selected.any([3]) or Q6.row(3).selected.any([3]) or Q6.row(4).selected.any([3]) or Q6.row(5).selected.any([3]) or Q6.row(6).selected.any([3]) or Q6.row(7).selected.any([3]):
-    ...
+    hDaughter.set(1)
 
 # ✅ Helper function with a loop
 - script: |
@@ -2206,32 +2344,34 @@ If a value can be None for the comparison you're making, prefer the **`(value or
 ```python
 # Verbose
 if Platform.row(2).value is not None and Platform.row(2).value > 0:
-    ...
+    hUsesPlatform.set(1)
 
 # Idiomatic
 if (Platform.row(2).value or 0) > 0:
-    ...
+    hUsesPlatform.set(1)
 ```
 
 ---
 
 ## 12. `.set(...)` and other write-terminal mutators on question proxies
 
-**`.set(...)` and `.reset()` on any question proxy always return `None`.** They are **write-terminal** — they mutate state and discard the return value. The full fluent-vs-write-terminal taxonomy lives in §11; this section is the per-type payload contract. (`quota(...)` no longer has a write method — see §15 for the deprecation note on `.fill()`.)
+**`.set(...)` and `.reset()` on any question proxy give nothing back.** They only make the change. Which methods give a result and which do not is laid out in §11; this section is the per-type payload contract. (`quota(...)` no longer has a write method — see §15 for the deprecation note on `.fill()`.)
 
 ```python
 Q1.set(2)            # ✓ correct — call on its own line
 Q1.reset()           # ✓ correct
-x = Q1.set(2)        # ✗ wrong — x is None, validator fires `question-write-assign`
+x = Q1.set(2)        # ✗ publish error `no-value` — a write gives nothing back
 ```
 
 **Multi-call write idiom** — when you have several writes to do, each on its own line, never chained:
 
 ```python
-hSegment.set(7)
+hSegment.set(2)                  # a code that hSegment declares
 hAvgRating.set(total / count)
 hBestBrand.set(bestCode)
 ```
+
+`.set(...)` takes any expression — `hCount.set((hCount.value or 0) + 1)` and `hQ7.set(1 if QBoxed.value == 1 else 2)` are both fine.
 
 ### Payload contract by question type
 
@@ -2249,11 +2389,14 @@ hBestBrand.set(bestCode)
 | `lookup` (single) | `Q.set(value)` (single-step) or `Q.set(stepId, value)` (cascading) |
 | `lookup` (multi) | `Q.add(value)` / `Q.remove(value)` — these are the multi-lookup write methods (also write-terminal) |
 
-`.reset()` clears everything. For cascading lookup, `.reset(stepId)` clears that step and all later steps. Both `.set` and `.reset` are write-terminal.
+`.reset()` clears everything. For cascading lookup, `.reset(stepId)` clears that step and all later steps.
 
-**Strict rules:** wrong payload shape throws; unknown codes throw; partial mutation not allowed (invalid payload leaves prior value unchanged).
+**Strict rules:**
 
-**Don't confuse with fluent `.set` on dicts.** A Python dict's `.set(key, value)` is fluent (returns the dict, safe to capture). The validator distinguishes by receiver — only `.set()` on a known qid / `q(...)` proxy is write-terminal.
+- **Codes are numbers and must exist.** `Q1.set("2")` (text) and `Q1.set(9)` (no such option) are publish errors when the code is written literally, and runtime errors when it is computed. The same goes for row and scale codes in a payload, and for `multi.add(code)`.
+- **The payload matches the type.** A number for `number`, text for `open` (`QOpen.set(5)` fails — write `QOpen.set(str(5))`), a list for `rank`, a dict for lists and grids.
+- **No partial change.** An invalid payload leaves the prior value untouched.
+- **Setting a question that is asked later is allowed** (prefill); *reading* one before it is asked only earns a warning in the editor.
 
 ---
 
@@ -2277,6 +2420,10 @@ hBestBrand.set(bestCode)
 | `.labels` on a question | `selectedLabel` / `selectedLabels` / `allLabels` |
 | `global://name` | `project://name` |
 | Single-brace piping `{ var }` | Double-brace `{{ var }}` |
+| Block comment `#[[ … #]]` | `#` on each line, or `- note: \|` (removed in engine v3.44.0) |
+| `datetime.timedelta(...)`, date arithmetic | Not available — work with `.year` / `.month` / `.day` (§10.5) |
+| `endSurvey("<custom outcome>")` | `"complete"` / `"terminate"` / `"quotafull"` only |
+| `endSurvey("terminate")` with no page and no redirect; an info page placed after the script as the "exit page" | `endSurvey("terminate", TermPage)` and / or `redirectUrl(...)` on the next line (§6.7; refused at publish from engine v3.45.0) |
 | `fail("en", "msg")` inline literal | `fail(QErrMsg.row(N).label)` — house standard, see §5.6 (the 2-arg form is supported by the runtime but defeats centralised translation) |
 
 ---
@@ -2413,15 +2560,15 @@ Custom code is a joint AI-programmer + human-programmer surface:
 
 ## 15. Quotas — author surface
 
-> **Quota cell definitions are created by the human programmer in the Quota Builder.** AI does not generate cell tables. But AI **does** author scripts that *read* from quota cells (least-fill assignment, conditional gates, monitoring) and routes the complete fill via `endSurvey("complete")`.
+> **Quota cell definitions are created by the human programmer in the Quota Builder.** AI does not generate cell tables. But AI **does** author scripts that *read* from quota cells (least-fill assignment, conditional gates, monitoring) and routes the complete fill via `endSurvey("complete", CompletePage)`.
 
 ### 15.1 The runtime quota accessor
 
 **Signature:** `quota(groupId, cellCode)` — **strictly two arguments**. There is no single-arg auto-match form; the author always supplies the resolved cell code. An unknown `groupId` or `cellCode` **fails closed** (treated as full, respondent is screened out) so a typo never silently routes someone into an untracked cell.
 
-**Counting model — read this first.** The engine counts each qualified respondent **once, automatically**, when they reach `endSurvey("complete")` — it atomically evaluates and fills all of that respondent's matching cells. **This is the default and the only path you should use to count completes.** In scripts you only ever *read* a cell (`.isOpen` / `.isFull`) to gate the flow — you never increment it yourself.
+**Counting model — read this first.** The engine counts each qualified respondent **once, automatically**, when they reach `endSurvey("complete", CompletePage)` — it atomically evaluates and fills all of that respondent's matching cells. **This is the default and the only path you should use to count completes.** In scripts you only ever *read* a cell (`.isOpen` / `.isFull`) to gate the flow — you never increment it yourself.
 
-> **⚠ `endSurvey("complete")` COUNTS the fill. It does not SCREEN.** The auto-fill path only increments cells for respondents who *reach* `endSurvey("complete")`. A capped multi-dimension quota still requires an explicit **read-only gate** earlier in the flow — if you don't gate, over-quota respondents sail through to complete and overfill every cell. There is no "complete handles it" shortcut.
+> **⚠ `endSurvey("complete", CompletePage)` COUNTS the fill. It does not SCREEN.** The auto-fill path only increments cells for respondents who *reach* `endSurvey("complete", CompletePage)`. A capped multi-dimension quota still requires an explicit **read-only gate** earlier in the flow — if you don't gate, over-quota respondents sail through to complete and overfill every cell. There is no "complete handles it" shortcut.
 
 **Read accessors** (return a value):
 
@@ -2435,7 +2582,7 @@ Custom code is a joint AI-programmer + human-programmer surface:
 
 **No manual write method.** `quota(...)` is read-only — no `.fill()`.
 
-> **⚠ Deprecated:** earlier versions of this reference showed `quota(group, code).fill()` as a manual single-cell fill. **Do not author it.** The method double-counts against cells that the auto-fill path also increments (reserves ahead), which corrupts the target-vs-actual math. It has been removed from the engine surface. The only correct write path is `endSurvey("complete")`, which evaluates all matching cells atomically for the respondent's full answer set.
+> **⚠ Deprecated:** earlier versions of this reference showed `quota(group, code).fill()` as a manual single-cell fill. **Do not author it.** The method double-counts against cells that the auto-fill path also increments (reserves ahead), which corrupts the target-vs-actual math. It has been removed from the engine surface. The only correct write path is `endSurvey("complete", CompletePage)`, which evaluates all matching cells atomically for the respondent's full answer set.
 
 #### Pattern A — single-dimension quota gate (cell code == dimension value)
 
@@ -2445,8 +2592,8 @@ Simplest case: the respondent's dimension value IS the cell code (e.g. 4 markets
 # Screen the respondent against the market quota. READ-ONLY test — no fill here.
 cell = hMarket.value
 if not quota("qtMarket", cell).isOpen:
-    endSurvey("quotafull")
-# The eventual endSurvey("complete") is what increments the cell — exactly once.
+    endSurvey("quotafull", QuotaFullPage)
+# The eventual endSurvey("complete", CompletePage) is what increments the cell — exactly once.
 ```
 
 #### Pattern B — multi-dimension quota gate (cell code derived from 2+ dimensions)
@@ -2508,9 +2655,9 @@ Most real screeners cross two or three dimensions (Age × Gender, Market × Age,
     if cell is not None:
         hAgeGenderCell.set(cell)
         if not quota("qtAgeGender", cell).isOpen:
-            endSurvey("quotafull")
+            endSurvey("quotafull", QuotaFullPage)
     # Unmapped (Non-binary / PNTA): no cell, no gate — they continue per !HUMAN above.
-    # Engine auto-fills the matched cell on endSurvey("complete") later.
+    # Engine auto-fills the matched cell on endSurvey("complete", CompletePage) later.
 ```
 
 **Why an explicit if/elif chain, not arithmetic.** `cell = (g - 1) * 3 + ag` happens to work for 2 × 3 cells numbered 1–6 in a specific order, but it silently breaks the moment the Quota Builder reorders cells, inserts a new category, or uses non-contiguous codes. The explicit mapping is **the single source of truth** between the DSL and the Builder — the human reads it, confirms it against their cell table, and the AI never guesses an arithmetic encoding that nobody asked for. Flag any divergence between the if-chain and the delta-log'd cell list.
@@ -2526,12 +2673,13 @@ Group ids are author-chosen names that match what the human will configure in th
 1. Make sure questions that feed quota dimensions exist with clean numeric codes (typically demos: `Gender`, `AgeBand`, `Region`).
 2. For every capped quota group that crosses two or more dimensions, author the **derivation + interlocked hidden cell + read-only gate** triple from §15.1 Pattern B. Single-dim quotas use Pattern A directly.
 3. Author least-fill / priority-fill **assignment scripts** that read open cells from a named quota and punch a hidden helper question (§16.10). Place a `# Prerequisite:` comment above the script naming the required quota group.
-4. Place `endSurvey("complete")` at the end of each qualifying path so the engine evaluates and increments cells:
+4. Place `endSurvey("complete", CompletePage)` at the end of each qualifying path so the engine evaluates and increments cells:
    ```yaml
    - script: |
        # Mark the qualified respondent as a complete — triggers quota cell increment.
-       endSurvey("complete")
+       endSurvey("complete", CompletePage)
    ```
+   Every gate ends on an end page too: `endSurvey("quotafull", QuotaFullPage)` (§6.7).
 5. In the delta-log, list every quota group the survey expects, with the cell codes and (where known) the targets, so the human can build them in the Builder.
 
 ### 15.3 What the AI programmer does NOT author
@@ -2556,8 +2704,15 @@ Group ids are author-chosen names that match what the human will configure in th
 
 - if SAge.value < 18:
     - script: |
-        endSurvey("terminate")
+        endSurvey("terminate", TermPage)
+
+# At the bottom of the file, above `- lists:` — the end page (§6.7):
+- qid: TermPage
+    type: info
+    text: Thank you for your interest. Unfortunately you do not qualify for this study.
 ```
+
+`SAge` is `required: True`, so it always has a value here. If the screener question could be skipped, gate first: `- if SAge.answered and SAge.value < 18:` — comparing an unanswered (`None`) answer with `<` is a runtime error (§10.0).
 
 ### 16.2 ZIP screener with `matchOnly`
 
@@ -2570,9 +2725,9 @@ Group ids are author-chosen names that match what the human will configure in th
     source.matchOnly: True
     text: Enter your ZIP code
 
-- if SZip.matched == False:
+- if not SZip.matched:
     - script: |
-        endSurvey("terminate")
+        endSurvey("terminate", TermPage)
 ```
 
 ### 16.3 Brand-aware loop
@@ -2587,13 +2742,13 @@ Group ids are author-chosen names that match what the human will configure in th
 
 - loop:
     id: brandLoop
+    options: brandList
     options.from: QBrandsAware.selected
-    questions:
-        - qid: QUseFreq
-            type: single
-            text: How often do you use {{ brandLoop.selectedLabel }}?
-            options: freqScale
-            required: True
+    - qid: QUseFreq
+        type: single
+        text: How often do you use {{ brandLoop.selectedLabel }}?
+        options: freqScale
+        required: True
 ```
 
 ### 16.4 Conditional follow-up
@@ -2632,6 +2787,8 @@ Group ids are author-chosen names that match what the human will configure in th
         if total != 100:
             fail("Allocations must sum to 100. You have {{ total }}.")
 ```
+
+`sum(QAlloc.values)` gives the same total in one call — a blank row is passed over (engine v3.44.1) — so the validation can also be written `if sum(QAlloc.values) != 100: fail("Allocations must sum to 100. You have {{ sum(QAlloc.values) }}.")`.
 
 ### 16.6 Multi with exclusive "None of these"
 
@@ -2680,6 +2837,8 @@ Group ids are author-chosen names that match what the human will configure in th
     options.from: QAware.selected
 ```
 
+If `QAware.selected` is empty, `QConsider` has nothing to show and the engine **skips it automatically** — no `if:` guard is needed, and its data stays blank (§11 "Absence semantics").
+
 ### 16.9 Cross-question consistency check
 
 ```yaml
@@ -2697,8 +2856,10 @@ Group ids are author-chosen names that match what the human will configure in th
             anchor: True
             exclusive: True
     validation: |
-        if (QLiving.selected.any(1) and QLiving.selected.size > 1) \
-                or (QLiving.selected.any(7) and QLiving.selected.any([5, 6])):
+        # A condition stays on one line — split a long test into named parts.
+        aloneWithOthers = QLiving.selected.any(1) and QLiving.selected.size > 1
+        parentWithPeers = QLiving.selected.any(7) and QLiving.selected.any([5, 6])
+        if aloneWithOthers or parentWithPeers:
             fail("Please review your answer.")
 ```
 
@@ -2723,17 +2884,27 @@ Group ids are author-chosen names that match what the human will configure in th
 ```yaml
 - script: |
     # Punch hSegment from age × spend for downstream routing.
+    # Codes are numbers — the meaning lives in the option labels below.
     if QAge.value < 25 and QSpend.value > 100:
-        hSegment.set("young_premium")
+        hSegment.set(1)
     elif QSpend.value > 200:
-        hSegment.set("high_value")
+        hSegment.set(2)
     else:
-        hSegment.set("standard")
+        hSegment.set(3)
+
+- qid: hSegment
+    type: single
+    visibility: hide
+    title: Segment
+    options:
+        1: Young premium
+        2: High value
+        3: Standard
 
 - qid: QPriorityFollowup
     type: single
     text: Based on what you've told us, are these priorities right?
-    if: hSegment.value == "young_premium"
+    if: hSegment.value == 1
     options:
         1: Yes, those match
         2: No, missing something
@@ -2882,38 +3053,37 @@ When two or more concepts get assigned per respondent, do all the picks in **one
     id: conceptLoop
     options: conceptList
     options.from: hConcept.selected
-    questions:
-        - qid: Q1
-            type: single
-            text: How appealing is {{ conceptLoop.selectedLabel }}?
-            required: True
-            options: appealOptions
+    - qid: Q1
+        type: single
+        text: How appealing is {{ conceptLoop.selectedLabel }}?
+        required: True
+        options: appealOptions
 
-        - qid: Q2
-            type: single
-            text: How likely would you be to buy {{ conceptLoop.selectedLabel }}?
-            required: True
-            options: likelyOptions
+    - qid: Q2
+        type: single
+        text: How likely would you be to buy {{ conceptLoop.selectedLabel }}?
+        required: True
+        options: likelyOptions
 
-        # ... other per-concept questions: Q3 open, Q4 multi, Q5 gridSingle ...
+    # ... other per-concept questions: Q3 open, Q4 multi, Q5 gridSingle ...
 
-        - script: |
-            # Inline punch — runs once per iteration in this iteration's context.
-            # Bare Q1/Q2/... resolve to this concept's answers;
-            # conceptLoop.value gives the current concept code.
-            # Read each question with its type-precise accessor (see table below).
-            iter = conceptLoop.value
-            if Q1.answered:                          # Q1 is single
-                q("Q1Concept", iter).set(Q1.value)
-            if Q2.answered:                          # Q2 is single
-                q("Q2Concept", iter).set(Q2.value)
-            if Q3.answered:                          # Q3 is open
-                q("Q3Concept", iter).set(Q3.value)
-            if Q4.answered:                          # Q4 is multi
-                q("Q4Concept", iter).set(Q4.selected)
-            if Q5.answered:                          # Q5 is gridSingle — punch row-by-row
-                for c in Q5.all:
-                    q("Q5Concept", iter).row(c).set(Q5.row(c).value)
+    - script: |
+        # Inline punch — runs once per iteration in this iteration's context.
+        # Bare Q1/Q2/... resolve to this concept's answers;
+        # conceptLoop.value gives the current concept code.
+        # Read each question with its type-precise accessor (see table below).
+        iter = conceptLoop.value
+        if Q1.answered:                          # Q1 is single
+            q("Q1Concept", iter).set(Q1.value)
+        if Q2.answered:                          # Q2 is single
+            q("Q2Concept", iter).set(Q2.value)
+        if Q3.answered:                          # Q3 is open
+            q("Q3Concept", iter).set(Q3.value)
+        if Q4.answered:                          # Q4 is multi
+            q("Q4Concept", iter).set(Q4.selected)
+        if Q5.answered:                          # Q5 is gridSingle — punch row-by-row
+            for c in Q5.all:
+                q("Q5Concept", iter).row(c).set(Q5.row(c).value)
 ```
 
 **Inline punch (at the end of the loop body) is the preferred form.** Bare qids in the script body resolve to *this iteration's* answers because the script runs inside the iteration context. `q("Q1Concept", iter)` dynamically names the destination slot. The punch executes once per iteration, immediately after the respondent finishes that concept's questions — no post-loop walk needed.
@@ -3116,7 +3286,7 @@ prob[s] = expScore[s] / Σ expScore[s']                 softmax
 assigned = argmax(prob[s])                              with any vendor-specified override
 ```
 
-**`math.exp` isn't in the Python subset** (§10.5). Use `math.e ** score` instead — `math.e` is supported and `**` is the standard exponentiation operator.
+`math.exp(score)` and `math.e ** score` are equivalent here — both are supported (§10.5).
 
 **Worked DSL skeleton:**
 
@@ -3264,16 +3434,16 @@ Generate the full file from the vendor's coefficient workbook — one segment pe
 
 - loop:
     id: periodProductLoop
+    options: periodProductList           # the same list Q1 uses
     options.from: Q1.selected.minus([8, 9])
-    questions:
-        - qid: Q3
-            type: multi
-            text: What brand(s) of {{ periodProductLoop.selectedLabel }} do you recall buying this last year?
-            instruction: Select all that apply.
-            required: True
-            min: 1
-            options: periodBrandMaster
-            options.from: brandsFor(periodProductLoop.value)
+    - qid: Q3
+        type: multi
+        text: What brand(s) of {{ periodProductLoop.selectedLabel }} do you recall buying this last year?
+        instruction: Select all that apply.
+        required: True
+        min: 1
+        options: periodBrandMaster
+        options.from: brandsFor(periodProductLoop.value)
 ```
 
 **Result on export.** The wide export columns are `Q3_1_<brand>`, `Q3_2_<brand>`, … per iteration code. Because `brand` is the master code (1–25 + anchors), every iteration column space is identical. Cross-product analysis filters / pivots without remapping.
@@ -3309,15 +3479,16 @@ Why the shorthand works: if the smallest and largest values in the row vector ar
 
 ```python
 - script: |
+    # Flag straightlining on Q5 and Q7; terminate when both grids are straightlined.
     s5 = min(Q5.values) == max(Q5.values)
     s7 = min(Q7.values) == max(Q7.values)
     hQ5Straight.set(1 if s5 else 2)
     hQ7Straight.set(1 if s7 else 2)
     if s5 and s7:
-        endSurvey()
+        endSurvey("terminate", TermPage)
 ```
 
-**Edge to watch:** `min` / `max` over a vector with `None` values may error or return `None`. Safe on `required: True` grids (every row filled). On optional grids, build a filtered list first:
+**Edge to watch:** `min` / `max` pass over blank rows, so a grid with some rows unanswered is judged on the rows that were answered. With **every** row blank both give `None`, and `None == None` is True — a skipped grid would be flagged. On an optional grid, gate with `.answered` (`if Q5.answered and min(Q5.values) == max(Q5.values):`), or build the list yourself:
 
 ```python
 filled = []
@@ -3356,10 +3527,10 @@ Related shortcuts in the same vector-thinking family:
 9. ❌ String option codes. Always numeric.
 10. ❌ Lowercase `true` / `false`. Always `True` / `False`.
 11. ❌ `show_if:` — use `if:`.
-12. ❌ `.replace(...)` — use `re.sub(...)`. `//` — use `math.floor(...)`. `switch` — use `if/elif/else`. List comprehensions — use explicit `for`.
+12. ❌ `//` — use `int(a / b)`. `switch` — use `if/elif/else`. List comprehensions — use explicit `for`. (`.replace(old, new)` and `.find(text)` **are** supported from engine v3.44.0.)
 13. ❌ `import math` (or any import) — modules are pre-imported; just call them.
-14. ❌ `f"..."` strings, walrus `:=`, lambdas, decorators, classes — all blocked.
-15. ❌ `break` / `continue` — restructure with a flag or early `return`.
+14. ❌ `f"..."` strings, `"%s" % x` / `.format()` text formatting, walrus `:=`, lambdas, decorators, classes, default parameter values — all refused. Join text with `+` and `str(...)`.
+15. ❌ Block comments `#[[ … #]]` — removed in engine v3.44.0 and now a publish error. Use `#` on each line, or `- note: |` between blocks. (`break` / `continue` are **allowed** from v3.44.0.)
 16. ❌ Using `.answered` to gate a screenout on a `matchOnly` lookup — use `.matched`.
 17. ❌ Forward references in scripts (helper used before definition).
 18. ❌ `total: True` to mean "validate the sum" — `total:` only controls *display*; use `sum:` and/or `validation:`.
@@ -3368,14 +3539,14 @@ Related shortcuts in the same vector-thinking family:
 21. ❌ Authoring `cardSort` / annotation modules in DSL — leave a stub and flag. The opposite holds for `cbc` / `maxdiff`: ❌ leaving a stub or deferring to a "CBC wizard" (there is none) — write them in full (§2.1); and ❌ reading the choice with `.chosen` (it does not exist) — use `QCbc.task(T).selected` / `.level(A)`.
 22. ❌ Authoring quota cells in DSL — human-task.
 23. ❌ Stopping mid-document to ask a clarifying question — code best-effort and put it in the delta-log.
-24. ❌ Comparing `request.param("...")` to `None` — it returns `""` for missing keys.
+24. ❌ Comparing `request.param("...")` to `None`, or using it bare as a test (`if not request.param("src"):`) — it is text, `""` for missing keys. Write `request.param("src") == ""`.
 25. ❌ Inventing qid prefixes when the qnr already uses an alphanumeric name. `Gender` stays `Gender`, never `SGender` / `QGender`. Prefix only when the qnr labels with pure numbers (`1`, `2`, ...).
 26. ❌ Wrapping a single standalone question in `- page:`. Pages exist to group two-or-more questions on one screen; a lone question is its own one-screen unit at the top level.
 27. ❌ Inline string literals inside `fail(...)`. House standard: every `fail()` pulls from `QErrMsg.row(N).label` (§5.6). Translation, copy review, and consistency all depend on this.
 28. ❌ Bundling every helper script at the top of the file. **Co-locate** each script with the question it serves (§6.5). Derived-value punches go right after the source question; masking helpers go right above their consumer.
-29. ❌ A masked question with no skip-if-empty guard. When `options.from:` returns empty, a required question becomes a dead-end. Always pair with `if: len(helper()) > 0`.
+29. ❌ Adding an `if: len(helper()) > 0` guard to every masked question. From engine v3.44.0 a question whose `options.from:` / `scale.from:` leaves nothing to show is **skipped automatically** and its data stays blank. Add an `if:` only when the question should be hidden for some *other* reason.
 30. ❌ A `- script: |` block with no `#` comment. Every script needs at least one short comment naming what it does — the next reader's first lookup.
-31. ❌ Hand-rolling iteration when an accessor exists. `sum(Q.values)` over `for c in Q.all: t += Q.row(c).value`. `Q.selected.size` over manually counting. `code in Q.selected` over `Q.selected.any([code])` for a single code. (§11 "Authoring style".)
+31. ❌ Hand-rolling iteration when an accessor exists. `Q.selected.size` over manually counting. `code in Q.selected` over `Q.selected.any([code])` for a single code. `sum(Q.values)` over `for c in Q.all: t += Q.row(c).value` — blank rows are passed over (§11 "Authoring style").
 32. ❌ Wrapping author-facing numeric accessors in `toInt(...)`. `single.value`, `number.value`, grid row values are already numeric — `toInt(Q.value) < 3` is just `Q.value < 3`.
 33. ❌ Organizing derotation slots by question (`Q1Concept1`, `Q1Concept2`, …, `Q2Concept1`, …). Group **by concept** instead — all of Concept 1's slots (Q1Concept1…QnConcept1) together, then Concept 2's. Analyst reads one concept's full panel in one place (§16.13).
 34. ❌ Defaulting to the post-loop `Qx_[c]` punch when inline would work. **Inline punch inside the loop body is preferred** — bare qids resolve to the current iteration automatically, no cross-iteration accessor needed. Reserve `Qx_[c]` for cases that genuinely span multiple loops or run outside the per-iteration context.
@@ -3396,27 +3567,24 @@ Related shortcuts in the same vector-thinking family:
 49. ❌ Long boolean disjunctions across many rows / accessors. `Q.row(1).x.any([3]) or Q.row(2).x.any([3]) or ... or Q.row(7).x.any([3])` should be a helper function looping `Q.all` (§11). Adding a row later will silently bypass the gate otherwise.
 50. ❌ Inline `if:` on every member of a multi-question gated section. When 2+ consecutive questions share a gate, wrap them in a `- if <expr>:` flow block (§6.4) — one gate, one place to change, easier to audit. Inline `if:` is for one-offs or when the gate differs per question.
 51. ❌ Programming separate qids per country (`S6US`, `S6AU`, `S6BR`, `S6ID`, or `S7US`/`S7AU`/`S7ID`) when the qnr shows market-specific labels in a table but the **code count is compatible**. **One qid, one set of codes** — the translator module fills per-language / per-market labels in its own pane. The mockup at `surveyDsl/mockup/translations.html` shows the per-question container pattern. Only create per-country qids when (a) the qnr literally names them separately, (b) the **code scales** differ structurally (e.g., S7 with 8 codes vs S8 with 10 codes — different code spaces), or (c) stakeholders explicitly want per-country columns and confirm codes aren't comparable across markets.
-52. ❌ Capturing the return value of a **write-terminal** mutator. `Q1.set(...)`, `Q1.reset()`, `Q1.row(c).set(...)`, `q("Q1").set(...)` always return `None` (§11 / §12). Assigning the result (`x = Q1.set(2)`) makes `x` None and the validator fires `question-write-assign`. Call write-terminal mutators on their own line. Distinguish from **fluent** collection / set / list / dict mutators (`.add`, `.remove`, `.intersect`, `.union`, `.minus`, `.append`, `.extend`, `.sort`, `.clear`, dict `.set(k, v)`) which DO return the modified object and are safe to chain or capture.
-    - **Note:** `quota(group, code).fill()` was previously listed here as a write-terminal mutator; the method itself has been removed from the engine (double-counted with the auto-fill path on `endSurvey("complete")`). See §15.
-53. ❌ Chaining `.set()` on a question proxy. `Q1.set(2).reset()` won't work — the first call returns `None`, so the second call errors. Use separate lines for each write. Chaining is only valid on fluent receivers (collections / sets / lists / dicts).
+52. ❌ Capturing the return value of a **write-terminal** mutator. `Q1.set(...)`, `Q1.reset()`, `Q1.row(c).set(...)`, `q("Q1").set(...)` always return `None` (§11 / §12). Assigning the result (`x = Q1.set(2)`) is a publish error (`no-value`). Call them on their own line. The same holds for the in-place methods of a list or dict you built — `.append`, `.extend`, `.remove`, `.sort`, `.clear`, dict `.set(k, v)`. Only the **survey-collection** methods (`.add`, `.remove`, `.intersect`, `.union`, `.minus` on `Q.selected` / `Q.all` / …) return a new value that is safe to store or chain.
+    - **Note:** `quota(group, code).fill()` was previously listed here as a write-terminal mutator; the method itself has been removed from the engine (double-counted with the auto-fill path on `endSurvey("complete", CompletePage)`). See §15.
+53. ❌ Chaining `.set()` on a question proxy. `Q1.set(2).reset()` won't work — the first call gives nothing back. Use separate lines for each write. Chaining is only valid on survey collections (`Q.all.minus([97]).union([5])`) and text.
 54. ❌ Dropping `.selected` from a membership test. The accessor is `Q.selected.any([codes])` on **both single and multi** — there is no `Q.any(...)` form. Per `the bundled single-type example` line 145–146: `Q.selected.any(N)` and `Q.selected.any([1, 2])` are the canonical reads. On `single`, `Q.value == N` is also valid for one code, but for two-or-more codes prefer `Q.selected.any([N1, N2])` over a chain of `or`s (easier to extend, easier to scan). Worked example: `QH.selected.any([1, 2])` ✓ — not `QH.any([1, 2])`. **Cross-check chat shorthand against this authoring reference / the bundled examples before applying** — chat examples are easy to misread, the doc is the source of truth.
 55. ❌ Forgetting that lists (`- lists: foo:`) are static authoring constructs, not runtime objects. `.all` works on **questions and loops**, not on shared lists. To enumerate codes a list defines, iterate from a question that uses the list (`for code in Q7.all:` not `for code in proteinList.all:`). Bonus: `Q.all` honors `options.from` masking — it reflects what the respondent saw, not the static authoring list.
-56. ❌ Inline ternary (`a if cond else b`) inside `- script:` / `validation:` / `if:`. The script Python subset has no conditional expression — use a proper `if / else` block (§10.1). Worked example: `hQ7.set(1 if boxedEaten else 2)` ❌ → `if boxedEaten: hQ7.set(1) else: hQ7.set(2)` ✓. Ternaries ARE allowed inside `{{ ... }}` text piping (different evaluator).
+56. ❌ Using a value as a condition. `if`, `elif`, `while`, `and` / `or` / `not`, a question's `if:` and `- if …:` all need a yes/no test — `if hFlag.value:`, `if Q.selected:`, `if not QName.value:` and `if: 1` are publish errors (`not-a-condition`). Write `if hFlag.value == 1:`, `if Q.selected.size > 0:`, `if QName.value == "":`. Likewise `Q.answered == 1` / `== 0` is refused — `.answered` is True / False: write `Q.answered` / `not Q.answered`. (The inline form `a if cond else b` **is** allowed everywhere from engine v3.44.0, including inside `.set(...)`.)
 57. ❌ Inventing an `h` / `H` / `HQ` prefix when the qnr already names a hidden question. Analysts look for hidden helpers by the qnr name — if the doc says "Q9" for the protein assignment or "Q10F" for the hidden rank, use `Q9` / `Q10F`, not `HQProtein` / `HQ10FRank`. The `h`-prefix soft convention applies **only** to hidden helpers AI introduces beyond the qnr (`hCountry`, `hSegment`, `hTrapCount`, etc.).
-58. ❌ Compound expressions inside `Q.set(...)` for a `number` question. `HQTrapCount.set((HQTrapCount.value or 0) + 1)` is unreliable — `.set()` wants a plain value (number / code / list), not an arithmetic chain wrapping a defensive `or` against `None`. Compute first into a variable, then pass the variable:
+58. ❌ Arithmetic or `<` / `>` on an answer that may be unanswered. An unanswered coded or numeric answer is `None`, and `None + 1` or `None < 3` is a runtime error — in a validation the respondent sees a generic "problem checking this answer" message. Coalesce or gate:
 
     ```python
-    # ❌ Inline arithmetic on the .set() argument
-    HQTrapCount.set((HQTrapCount.value or 0) + 1)
+    # ❌ Fails the first time through, when HQTrapCount is still unanswered
+    HQTrapCount.set(HQTrapCount.value + 1)
 
-    # ✅ Resolve None defensively, then write a clean value
-    n = HQTrapCount.value
-    if n is None:
-        n = 0
-    HQTrapCount.set(n + 1)
+    # ✅ Coalesce None to 0 — a compound expression inside .set(...) is fine
+    HQTrapCount.set((HQTrapCount.value or 0) + 1)
     ```
 
-    Same rule for any accumulator pattern: extract the read, normalize None, increment, write.
+    Same rule for any accumulator. (`sum()` / `avg()` / `min()` / `max()` over a **list** are the exception — they pass over blank rows.)
 59. ❌ Comments inside a `lists:` / `- lists:` block at the same indent as the list's child keys. The DSL parser doesn't reliably attach those comments to the right node — keep list-block comments **above the list name** (one level up), or indent them deeper than the data keys. Worked example:
 
     ```yaml
@@ -3438,8 +3606,21 @@ Related shortcuts in the same vector-thinking family:
 61. ❌ Assuming a piped subset of a randomized parent still gets its own independent reshuffle. **Engine v3.38.0 fixed the duplicate-shuffle bug**: the respondent render no longer carries a second shuffle on top of the engine's one. A piped subset (`options.from: QBrand.selected`) now **inherits the parent's shown order** — not an independent reshuffle. This is research-methodology correct and matches `Q.all` / `Q.selected`, but a legacy survey that relied on the broken reshuffle will see its displayed order change (data unaffected — stored by code). If you genuinely need an independent reshuffle on the child, give the child its own `order: random` **and** be aware that stored codes stay the same (§3.6 behavior-change note). Related: for a loop that must iterate in the parent's shown order, use `options.from: QBrand.selected` + `order: QBrand.all` (expression form, §6.3) — no helper required.
 62. ❌ Adding `order: Q.all` to a question whose `options.from:` already pipes from the parent. Redundant — the engine v3.38.0 auto-inheritance already produces that sequence. The expression form on `order:` / `scale.order:` is reserved for surfaces that **don't** auto-inherit: **loops** (iteration order follows source shown order) and **blocks** (child-block sequence from a stored `[2,4,1,3]`-style list). On questions, the resolver gets the right answer with just `options.from:` — leave the question clean. Worked example: `options.from: q1BrandsAware()` on a `multi` Q2 is enough; `order: Q1.all` on top is dead code. (§3.6, §6.3)
 63. ❌ Hand-computing a multi-dim quota cell code with arithmetic. `cell = (ag - 1) * 2 + g` works only when the Quota Builder numbers cells in exactly that order with exactly that stride — change the cell table and the arithmetic silently maps every respondent to the wrong cell. Write the full if/elif mapping instead (§15.1 Pattern B): one row per cell, label-commented, matching the Builder table 1:1. The DSL mapping is the author–Builder contract; arithmetic hides that contract behind a formula no reviewer can audit against the qnr. Flag any divergence between the mapping and the delta-log'd cell list.
-64. ❌ Dropping the quota gate because "`endSurvey("complete")` auto-fills." `endSurvey("complete")` **counts**, it does not **screen**. Removing the read-only `quota(...).isOpen` test means every over-quota respondent completes and gets counted — the capped group overfills, not stops. A capped multi-dim quota always needs the explicit gate (§15.1 Pattern B). Correct over-correction when `.fill()` was removed: delete the write, keep the read. The structural pair is `if not quota(...).isOpen: endSurvey("quotafull")` for the screen, and the eventual `endSurvey("complete")` for the count — both are required.
+64. ❌ Dropping the quota gate because "`endSurvey("complete", CompletePage)` auto-fills." `endSurvey("complete", CompletePage)` **counts**, it does not **screen**. Removing the read-only `quota(...).isOpen` test means every over-quota respondent completes and gets counted — the capped group overfills, not stops. A capped multi-dim quota always needs the explicit gate (§15.1 Pattern B). Correct over-correction when `.fill()` was removed: delete the write, keep the read. The structural pair is `if not quota(...).isOpen: endSurvey("quotafull", QuotaFullPage)` for the screen, and the eventual `endSurvey("complete", CompletePage)` for the count — both are required.
 65. ❌ Rewording, rephrasing, re-punctuating, expanding, or "improving" an existing question's text, option labels, row labels, or validation error strings while making a change the user did not ask about. This is a **hard rule** (§0 #9) because it has data-integrity consequences, not a style preference. Field reports: an AI edit that added one new question also silently normalized "Strongly agree" to "Strongly Agree" across the whole 5-point grid, retitlecased half the brand list, and dropped the trailing full stops from four option labels — a change nobody asked for, in a survey already in field, that invalidated the collected data for every touched surface and forced a re-field. The failure mode is the AI treating "the file is being edited anyway, so let me tidy up" as polish; it is not. **Never touch wording the user did not name.** Scan the pre-edit text for every `title:` / `text:` / `label:` / scale / row / `validation:` string the edit passed near, and confirm each one is byte-identical to the input unless the request explicitly asked you to change it. Converting a fresh spec is the only time you author new copy; even then, copy **verbatim** from the source (same casing, punctuation, contractions, trailing periods) — if the spec has a typo and you keep it, mark the line `# verbatim: original spec`; if you fix it, log the fix in the `delta-log`. The AI never has implicit authority over copy — the client's questionnaire does.
+
+66. ❌ Quoting a code, or giving a coded hidden question text values. `Q1.value == "2"`, `Q1.set("2")`, `hSegment.set("premium")`, `if: hSegment.value == "premium"` are all publish errors — codes are numbers. Give the hidden `single` numeric options whose **labels** carry the meaning (`1: Premium`, `2: Standard`) and write `hSegment.set(1)` / `hSegment.value == 1`. If free text really must be stored, the hidden question is `type: open`.
+67. ❌ Using a code the question does not declare. `Q1.set(9)` on a 1–5 scale, `QGrid.row(12)`, `Q1.selected.any([1, 9])`, `hSegment.set(7)` when `hSegment` lists 3 options — each blocks publish (`unknown-code`). When a script punches a hidden question, declare **every** code the script can write.
+68. ❌ `is None` on a text answer or a collection. `QOpen.value is None`, `QM.selected is None`, `len(v) < 5` guarded by `v is None or …` on an `open` value — text is `""` and collections are empty, never `None`, so the checker refuses the test (`mixed-kinds`). Write `not QOpen.answered`, `QOpen.value == ""`, `QM.selected.size == 0`, or simply `len(v) < 5`.
+69. ❌ Continuing an `if` test onto a second line (with `\` or by wrapping brackets). Not accepted. Name the parts (`a = …`, `b = …`, then `if a or b:`) or move the test into a `def` helper.
+70. ❌ `set(rows).add([97, 98])` to add several codes to a list you built. On a constructed set `.add` takes one value, so the list is nested and both codes are lost from the mask. Use `rows.extend([97, 98])`. (`Q.selected.add([97, 98])` on a survey collection is fine.)
+71. ❌ `datetime.timedelta(...)`, date arithmetic, `.weekday()`, `.strftime()`. A date offers `.year`, `.month`, `.day`, `.isoformat()` (plus `.hour`, `.minute`, `.second` on `datetime.now()`) and nothing else (§10.5).
+72. ❌ `endSurvey("screenout")` or any custom outcome. Only `"complete"`, `"terminate"`, `"quotafull"`.
+73. ❌ `endSurvey("terminate")` on its own. Every `endSurvey` names an end page (`endSurvey("terminate", TermPage)`) or is followed on the next line by `redirectUrl(...)`; with neither it is a publish error (§6.7).
+74. ❌ Writing an info page after a terminating script and expecting it to be the closing page. Position means nothing: name the page in the `endSurvey` call and keep end pages at the bottom of the file.
+75. ❌ One end page per screen-out with the same text. Name the same `TermPage` from every terminate point.
+76. ❌ Naming a hidden question, a non-`info` question, or a quoted name (`"TermPage"`) as the end page.
+77. ❌ Anything between `endSurvey(...)` and its `redirectUrl(...)`, or a redirect URL without `https://`, or an invented panel link. The redirect is the very next statement, written in full, and only when the brief supplies the link.
 
 ---
 
@@ -3480,7 +3661,7 @@ When a `.docx` is dropped (manually or via the upload button), follow this in on
 
 4. **Code numerically.** Apply the list-extraction protocol (§18). Mark anchors / exclusives / specifies / DK-NA boilerplate. Default code conventions: `97` Other (specify), `98` Don't know, `99` None of these / Prefer not to say (with `anchor: True` and on `multi` typically `exclusive: True`).
 
-5. **Author logic.** `if:` for show conditions, `validation: |` blocks (use the error-message bank pattern when messages recur), `script:` for derived flags and segment assignment, `endSurvey("terminate")` for screenouts, `endSurvey("complete")` at the end of qualifying paths.
+5. **Author logic.** `if:` for show conditions, `validation: |` blocks (use the error-message bank pattern when messages recur), `script:` for derived flags and segment assignment, `endSurvey("terminate", TermPage)` for screenouts, `endSurvey("complete", CompletePage)` at the end of qualifying paths, and the end pages themselves at the bottom of the file (§6.7).
 
 6. **Self-check** against §0, §11, §13, §17.
 

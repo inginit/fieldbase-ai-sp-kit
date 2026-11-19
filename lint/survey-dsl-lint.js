@@ -33,6 +33,13 @@ function codePart(s) {
   return h >= 0 ? s.slice(0, h) : s;
 }
 
+// quoted text blanked out, so an operator inside text is not read as code
+function withoutStrings(s) { return s.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""'); }
+
+// one-line properties and flow headers whose value is survey code
+const LOGIC_LINE = /^\s*(-\s+(if|elif)\b|(if|validation|options\.from|scale\.from|order|scale\.order)\s*:)/;
+const END_OUTCOMES = new Set(['complete', 'terminate', 'quotafull']);
+
 function lintText(text) {
   const problems = [];
   const lines = text.split(/\r?\n/);
@@ -77,6 +84,10 @@ function lintText(text) {
     if (/^\t| \t/.test(raw)) mk(problems, ln, 'error', 'tab-indent',
       'indentation uses a tab — use 4 spaces');
 
+    // ── R: block comments were removed in engine v3.44.0 — always ──
+    if (/^\s*#(\[\[|\]\])/.test(raw)) mk(problems, ln, 'error', 'block-comment-removed',
+      '`#[[ ... #]]` block comments were removed — put # on each line, or use a `- note: |` block');
+
     // ── R: indentation must be a multiple of 4 (warn; skip scalar bodies) ──
     if (!inScalar && ind % 4 !== 0)
       mk(problems, ln, 'warn', 'indent-4', `indentation is ${ind} spaces — DSL indents in multiples of 4`);
@@ -89,19 +100,47 @@ function lintText(text) {
       scalarKind = CODE_KEYS.has(key) ? 'code' : 'prose';
     }
 
+    // ── text formatting with % or .format() — in logic lines and inside {{ }} pipes anywhere ──
+    if (((inScalar && scalarKind === 'code') || LOGIC_LINE.test(code) || code.includes('{{'))
+        && /["']\s*(%\s*[A-Za-z_("']|\.format\()/.test(code))
+      mk(problems, ln, 'error', 'text-format',
+        '`"..." % x` and `.format()` are not part of the survey language — join text with + and str(...), round with round(x, n)');
+
     // ── code-logic rules: run outside scalars and inside `code` scalars ──
     if (inCode) {
       // Q.any(...) without .selected (context varies → warn)
       if (/\.any\(/.test(code) && !/\.selected\.any\(/.test(code) && !/\bquota\(/.test(code))
         mk(problems, ln, 'warn', 'any-without-selected',
           'membership test should be Q.selected.any([...]) — there is no Q.any(...) form');
-      // inline ternary (a if c else b) outside piping
-      if (/=\s*.+\sif\s.+\selse\s/.test(code) && !code.includes('{{'))
-        mk(problems, ln, 'warn', 'ternary-in-logic',
-          'inline ternary (a if c else b) is not allowed in script/validation/if: — use an if/else block');
-      // continue / break in the Python subset
-      if (/^\s+(continue|break)\s*$/.test(raw)) mk(problems, ln, 'error', 'continue-break',
-        'continue/break are blocked in the Python subset — invert the predicate instead');
+      // ── script-language removals of engine v3.44.0 (strict language, §10) ──
+      // Only on lines that hold logic: a code scalar, or a one-line logic property.
+      const isLogic = (inScalar && scalarKind === 'code') || LOGIC_LINE.test(code);
+      const bare = withoutStrings(code);   // operators inside quoted text are not code
+      if (isLogic) {
+        if (/\/\//.test(bare)) mk(problems, ln, 'error', 'floor-division',
+          '`//` is not part of the survey language — use int(a / b)');
+        if (/(^|[^A-Za-z0-9_])f["']/.test(code)) mk(problems, ln, 'error', 'f-string',
+          'f-strings are not part of the survey language — join text with + and str(...)');
+        if (/\\\s*$/.test(raw)) mk(problems, ln, 'error', 'line-continuation',
+          'a line cannot be continued with a backslash — keep the condition on one line, or name its parts first');
+        if (/\.(answered|notAnswered|matched)\s*(==|!=)\s*[01]\b/.test(bare)) mk(problems, ln, 'error', 'answered-compared',
+          '.answered / .notAnswered / .matched are True or False — write `Q.answered` or `not Q.answered`, never == 0 / == 1');
+        if (/\.(selected|values|all|selectedLabels)\s+is\s+(not\s+)?None\b/.test(bare)) mk(problems, ln, 'error', 'collection-is-none',
+          'a selection or list is never None — test `.size == 0` or `.answered`');
+        if (/\bdatetime\.timedelta\b/.test(bare)) mk(problems, ln, 'error', 'datetime-form',
+          'there is no datetime.timedelta — work with the parts of a date (.year / .month / .day)');
+        const outcome = /\bendSurvey\(\s*["']([^"']*)["']/.exec(code);
+        if (outcome && !END_OUTCOMES.has(outcome[1].toLowerCase())) mk(problems, ln, 'error', 'endsurvey-outcome',
+          `endSurvey("${outcome[1]}") — the outcome is "complete", "terminate" or "quotafull" only`);
+        // An ending needs a way out (engine v3.45.0): an end page named in the call, or a
+        // redirectUrl(...) as the next statement. `endSurvey("terminate")` alone is refused.
+        if (/\bendSurvey\(\s*(["'][^"']*["'])?\s*\)/.test(code)) {
+          let next = '';
+          for (let j = i + 1; j < lines.length && !next; j++) next = codePart(lines[j]).trim();
+          if (!/^redirectUrl\s*\(/.test(next)) mk(problems, ln, 'error', 'end-without-page',
+            'endSurvey(...) needs an end page — endSurvey("terminate", TermPage) — or redirectUrl(...) on the next line');
+        }
+      }
       // quota().fill() was removed from the engine (double-counted with the auto-fill path)
       if (/\.fill\s*\(/.test(code) && /\bquota\s*\(/.test(code)) mk(problems, ln, 'error', 'quota-fill-removed',
         'quota().fill() has been removed — the engine auto-fills cells on endSurvey("complete"). Read-only from scripts: .isOpen / .count / .target / .remaining; terminate via endSurvey("quotafull") when full');

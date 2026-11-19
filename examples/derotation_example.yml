@@ -352,7 +352,15 @@
 
 - script: |
     # Mark the respondent as a complete — triggers quota cell increments.
-    endSurvey("complete")
+    endSurvey("complete", CompletePage)
+
+# -----------------------------------------------------------------------------
+# END PAGES — named by endSurvey(...); shown only to a respondent whose survey
+# ended on them, never on the way through the survey.
+# -----------------------------------------------------------------------------
+- qid: CompletePage
+    type: info
+    text: Thank you. Your answers have been recorded.
 
 # =============================================================================
 # REUSABLE LISTS
